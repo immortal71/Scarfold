@@ -21,7 +21,7 @@ def plot_structure(coords, title='structure', save_html=None, show=True, colors=
         fig.show()
     return fig
 
-def plot_pred_and_native(pred_coords, true_coords, save_html=None):
+def plot_pred_and_native(pred_coords, true_coords, save_html=None, show=False):
     # overlay both
     L = pred_coords.shape[0]
     fig = go.Figure()
@@ -34,9 +34,11 @@ def plot_pred_and_native(pred_coords, true_coords, save_html=None):
     fig.update_layout(width=900, height=700)
     if save_html:
         fig.write_html(save_html)
-    fig.show()
+    if show:
+        fig.show()
+    return fig
 
-def plot_contact_map(pred_dists, true_dists=None, save_html=None, title='contact-map'):
+def plot_contact_map(pred_dists, true_dists=None, save_html=None, title='contact-map', show=False):
     # show predicted distance heatmap, optionally with true-overlay diff
     l = pred_dists.shape[0]
     # convert to contact probabilities (lower is stronger contact)
@@ -46,15 +48,19 @@ def plot_contact_map(pred_dists, true_dists=None, save_html=None, title='contact
                       xaxis_title='residue i', yaxis_title='residue j')
     if save_html:
         fig.write_html(save_html)
-    fig.show()
+    if show:
+        fig.show()
     if true_dists is not None:
         delta = np.abs(pred_dists - true_dists)
-        fig2 = go.Figure(data=go.Heatmap(z=delta, x=list(range(l)), y=list(range(l)), colorscale='RdBu', zmid=0.0))
-        fig2.update_layout(title=title + ' difference = |pred - truth|', width=650, height=620,
+        # Reds colorscale: differences are non-negative, so sequential (not diverging) is correct
+        fig2 = go.Figure(data=go.Heatmap(z=delta, x=list(range(l)), y=list(range(l)),
+                                         colorscale='Reds', zmin=0.0))
+        fig2.update_layout(title=title + ' |pred − truth| (Å)', width=650, height=620,
                            xaxis_title='residue i', yaxis_title='residue j')
         if save_html:
             fig2.write_html(save_html.replace('.html', '_delta.html'))
-        fig2.show()
+        if show:
+            fig2.show()
 
 
 def plot_plddt(plddt_scores, save_html=None, title='pLDDT profile'):

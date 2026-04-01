@@ -72,7 +72,7 @@ def _evaluate_one(model, seq, true_coords, feature_set, use_grad_mds):
     N = min(L_pred, L_true)
 
     if use_grad_mds:
-        pred_coords = utils.gradient_mds(pred_dist, dim=3, n_iter=200)
+        pred_coords = utils.gradient_mds(pred_dist, dim=3, n_iter=300)
     else:
         pred_coords = utils.classical_mds(pred_dist, dim=3)
 
@@ -94,6 +94,54 @@ def _evaluate_one(model, seq, true_coords, feature_set, use_grad_mds):
 
 
 # ── one condition ─────────────────────────────────────────────────────────────
+
+def _run_condition_kfold(name, model_type, feature_set, use_contact_loss, use_grad_mds,
+                         all_X, all_Y, all_seqs, all_coords, seq_len, epochs, lr, device,
+                         k=3):
+    """k-fold cross-validation for a single ablation condition.
+
+    Splits data into k folds, trains on k-1 folds, evaluates on the held-out fold,
+    and averages results across folds. This gives more reliable estimates than a
+    single train/test split, at the cost of k× the compute.
+    """
+    N = len(all_X)
+    fold_size = N // k
+    fold_results = []
+    for fold_idx in range(k):
+        val_start = fold_idx * fold_size
+        val_end = val_start + fold_size if fold_idx < k - 1 else N
+        # Split
+        val_mask = np.zeros(N, dtype=bool)
+        val_mask[val_start:val_end] = True
+        train_X = all_X[~val_mask]
+        train_Y = all_Y[~val_mask]
+        val_seqs = [s for s, m in zip(all_seqs, val_mask) if m]
+        val_coords = [c for c, m in zip(all_coords, val_mask) if m]
+        # Train
+        aa_dim = _feat_dim(feature_set)
+        model = md.get_model(model_type, seq_len, aa_dim=aa_dim)
+        contact_w = 0.5 if use_contact_loss else 0.0
+        model = md.train_simple(model, train_X, train_Y, epochs=epochs, lr=lr,
+                                device=device, contact_weight=contact_w)
+        # Evaluate on validation fold
+        for seq, coords in zip(val_seqs, val_coords):
+            try:
+                s = seq[:model.seq_len]
+                c = coords[:model.seq_len]
+                m = _evaluate_one(model, s, c, feature_set, use_grad_mds)
+                fold_results.append(m)
+            except Exception as exc:
+                print(f'    Warning [{name} fold {fold_idx}]: {exc}')
+
+    # Aggregate across all folds
+    summary = {}
+    if fold_results:
+        for key in fold_results[0]:
+            vals = [r[key] for r in fold_results]
+            summary[key] = {'mean': float(np.mean(vals)), 'std': float(np.std(vals)),
+                            'n': len(vals)}
+    return summary
+
 
 def _run_condition(name, model_type, feature_set, use_contact_loss, use_grad_mds,
                    train_X, train_Y, test_seqs, test_coords, seq_len, epochs, lr, device):
@@ -132,6 +180,8 @@ def main():
     p.add_argument('--lr',      type=float, default=5e-4)
     p.add_argument('--device',  type=str, default='cpu')
     p.add_argument('--quick',   action='store_true', help='Fast 8-epoch run to verify pipeline')
+    p.add_argument('--kfold',   action='store_true', help='Use k-fold CV instead of fixed train/test split')
+    p.add_argument('--k',       type=int, default=3, help='Number of folds for --kfold mode')
     p.add_argument('--result-dir', type=str, default='results')
     args = p.parse_args()
 
@@ -140,6 +190,9 @@ def main():
         args.samples = 100
         args.n_test = 10
         print('Quick mode: epochs=8, samples=100, n_test=10')
+
+    if args.kfold:
+        print(f'k-fold mode: k={args.k}, all data used for both training and evaluation')
 
     os.makedirs(args.result_dir, exist_ok=True)
 
@@ -184,11 +237,24 @@ def main():
     for name, model_type, feature_set, use_cbc, use_grad_mds in conditions:
         train_X = feats[feature_set]
         print(f'[{name}] training ...')
-        summary = _run_condition(
-            name, model_type, feature_set, use_cbc, use_grad_mds,
-            train_X, train_Y, test_seqs, test_coords,
-            seq_len, args.epochs, args.lr, args.device,
-        )
+        if args.kfold:
+            # Use all data for k-fold CV — no fixed test split
+            all_X = np.concatenate([train_X, feats[feature_set][args.samples:]], axis=0) \
+                if train_X.shape[0] == args.samples else train_X
+            all_coords = [utils.synthetic_native_coords(s, seed=999 + i)
+                          for i, s in enumerate(all_seqs[:args.samples])]
+            summary = _run_condition_kfold(
+                name, model_type, feature_set, use_cbc, use_grad_mds,
+                feats[feature_set], all_dists[:args.samples],
+                all_seqs[:args.samples], all_coords,
+                seq_len, args.epochs, args.lr, args.device, k=args.k,
+            )
+        else:
+            summary = _run_condition(
+                name, model_type, feature_set, use_cbc, use_grad_mds,
+                train_X, train_Y, test_seqs, test_coords,
+                seq_len, args.epochs, args.lr, args.device,
+            )
         all_results[name] = summary
         f1     = summary.get('contact_f1', {}).get('mean', float('nan'))
         rmsd   = summary.get('rmsd_aligned', {}).get('mean', float('nan'))

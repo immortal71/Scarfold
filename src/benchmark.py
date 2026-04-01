@@ -206,12 +206,13 @@ def main():
             except Exception as exc:
                 print(f'  Warning: test sample {i} failed: {exc}')
 
-        # aggregate
+        # aggregate — keep raw per-sample results for paired t-test
         metrics = list(scores[0].keys()) if scores else []
         results[model_type] = {
             metric: _summary([s[metric] for s in scores])
             for metric in metrics
         }
+        results[model_type]['_raw'] = scores     # per-sample dicts for paired t-test
         results[model_type]['n_evaluated'] = len(scores)
 
     # ── naive baseline evaluation ──────────────────────────────────────────────
@@ -237,6 +238,7 @@ def main():
                 metric: _summary([s[metric] for s in bl_scores])
                 for metric in metrics
             }
+            results[baseline_name]['_raw'] = bl_scores   # per-sample for paired t-test
             results[baseline_name]['n_evaluated'] = len(bl_scores)
         print(f'  {baseline_name}: {len(bl_scores)} samples evaluated')
 
@@ -272,21 +274,24 @@ def main():
 
     # t-tests: Transformer vs each other method
     stat_tests = {}
-    print('\nPaired t-tests (Transformer vs other methods):')
+    print('\nPaired t-tests (Transformer vs other methods, on matched test samples):')
     print(f'{"vs":<20} {"Metric":<18} {"t-stat":>8} {"p-value":>10} {"sig":>5}')
     print('-' * 65)
     for other in ['random', 'seq_separation', 'mean_distance', 'mlp']:
-        if other not in results:
+        if other not in results or '_raw' not in results.get('transformer', {}):
             continue
         for metric in ['contact_f1', 'rmsd_aligned', 'pLDDT']:
             if metric not in results.get('transformer', {}) or metric not in results.get(other, {}):
                 continue
-            tr_r = results['transformer'][metric]
-            ot_r = results[other][metric]
-            n = tr_r['n']
-            pooled_se = np.sqrt((tr_r['std'] ** 2 + ot_r['std'] ** 2) / max(n, 2))
-            t_stat = (tr_r['mean'] - ot_r['mean']) / (pooled_se + 1e-12)
-            p_val = 2 * stats.t.sf(abs(t_stat), df=max(n - 1, 1))
+            # True paired t-test: same test sequence evaluated by both models
+            tr_raw = results['transformer']['_raw']
+            ot_raw = results[other].get('_raw', [])
+            n = min(len(tr_raw), len(ot_raw))
+            if n < 2:
+                continue
+            tr_vals = [s[metric] for s in tr_raw[:n]]
+            ot_vals = [s[metric] for s in ot_raw[:n]]
+            t_stat, p_val = stats.ttest_rel(tr_vals, ot_vals)
             sig = '***' if p_val < 0.001 else ('**' if p_val < 0.01 else ('*' if p_val < 0.05 else 'ns'))
             key = f'transformer_vs_{other}_{metric}'
             stat_tests[key] = {'t_stat': float(t_stat), 'p_value': float(p_val)}
@@ -309,7 +314,9 @@ def main():
     output = {
         'timestamp': datetime.datetime.now().isoformat(),
         'config': vars(args),
-        'results': results,
+        # Remove _raw from saved output (too large) — keep summary stats only
+        'results': {k: {mk: mv for mk, mv in v.items() if mk != '_raw'}
+                    for k, v in results.items()},
         'stat_tests': stat_tests,
     }
     ts = datetime.datetime.now().strftime('%Y%m%d_%H%M%S')

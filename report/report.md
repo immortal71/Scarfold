@@ -6,7 +6,7 @@
 
 ## Abstract
 
-We present **Scarfold**, a from-scratch implementation of an AlphaFold-inspired protein structure prediction pipeline. Given only an amino-acid sequence, Scarfold predicts pairwise inter-residue distances, reconstructs 3-D coordinates via gradient-based metric optimisation, and evaluates structural quality using pLDDT, local lDDT, contact-map F1, and TM-score. We introduce four key improvements over naïve one-hot baselines: (1) **rich sequence encodings** combining BLOSUM62 substitution profiles with physicochemical properties (48 features/residue vs 20), (2) a **Transformer encoder** with per-residue attention for long-range contact modelling, (3) a **combined MSE + contact BCE loss** with cosine learning-rate annealing, and (4) a **PSSM module** supporting both pseudo-PSSM (BLOSUM62-derived) and real PSI-BLAST position-specific scoring matrices. On a synthetic benchmark, the Transformer achieves statistically significant improvements in contact-map F1 over the MLP baseline and over three naive baselines, demonstrating that the learned representations capture non-trivial structural signal. A systematic ablation study (`src/ablation.py`) quantifies the independent contribution of each component.
+We present **Scarfold**, a from-scratch implementation of an AlphaFold-inspired protein structure prediction pipeline. Given only an amino-acid sequence, Scarfold predicts pairwise inter-residue distances, reconstructs 3-D coordinates via gradient-based metric optimisation, and evaluates structural quality using pLDDT, local lDDT, contact-map F1, and TM-score. Over two weeks of development we implemented eight key architectural improvements over a naïve one-hot/MSE baseline: (1) **rich sequence encodings** (BLOSUM62 + physicochemical, 48-dim), (2) a **PSSM module** (pseudo-PSSM and real PSI-BLAST, 50-dim), (3) **Evoformer-lite** Transformer with pair-biased attention and pair-track updates, (4) **64-bin distogram cross-entropy loss** (AlphaFold-style), (5) **contact BCE auxiliary loss**, (6) **prediction recycling** (3 recycles, stop-gradient, AlphaFold2 §1.8), (7) **secondary structure auxiliary head** (coil/helix/strand, unsupervised labels from Cα geometry), and (8) a **per-residue pLDDT confidence head** (4-bin, trained on its own mean absolute distance error). On a synthetic benchmark the Transformer achieves statistically significant improvements in contact-map F1 (paired t-test) over the MLP baseline and over three naïve baselines. A systematic 11-condition ablation study (`src/ablation.py`) quantifies the independent contribution of each component. A 3-fold cross-validation mode (`--kfold`) is provided for robust estimation.
 
 ---
 
@@ -61,25 +61,34 @@ Three PSSM modes are supported:
 
 **MLP baseline** — flattens the L×48 encoding through two hidden layers (1024 → 512, LayerNorm + GELU). Output is reshaped into (L, L, 65) distogram logits, symmetrised, then converted to expected distances via softmax + bin-centre weighted average.
 
-**Transformer — Evoformer-lite** — the core architecture, implementing one block of AlphaFold2's Evoformer concept:
+**Transformer — Evoformer-lite** — the core architecture, implementing key ideas from AlphaFold2's Evoformer:
 
 1. Project each residue to a 256-dim embedding + learnable positional embedding.
 2. Build an initial **pair representation** (L×L×64) via outer sum of projected residues + relative-position embedding (clipped to ±32).
 3. Process through 4 **Evoformer-lite layers**, each with:
-   - **Pair-biased attention**: pair(i,j) features are projected to per-head attention biases, conditioning the attention pattern on pair state.
-   - **Pair track update**: pair representations updated with outer-product mean of residue embeddings at each layer.
+   - **Pair-biased attention** (corrected): pair(i,j) features are projected to per-head attention biases via manual scaled dot-product attention, correctly applied *per sample per head* (not averaged over the batch).
+   - **Pair track update**: outer-product mean of updated residue embeddings updates pair representations at every layer.
    - Pre-LN feedforward on the residue track.
-4. **Distogram head**: (pair_dim → 65 logits) per pair, symmetrised.
+4. **Recycling** (AlphaFold2 §1.8): after each of `N_recycles=3` passes, the stop-gradient distogram logits are projected back into the pair representation via a learned linear layer. The residue track is reinitialised each cycle (single-sequence Evoformer convention).
+5. **Distogram head**: (pair_dim → 65 logits) per pair, symmetrised.
+6. **Auxiliary head — Secondary structure**: per-residue 3-class (coil/helix/strand) prediction from the residue track. Labels are derived without any external tool: α-helix if d(i,i+3) < 6.0 Å and d(i,i+4) < 7.0 Å; β-strand if d(i,i+2) > 5.5 Å; coil otherwise.
+7. **Auxiliary head — pLDDT confidence**: per-residue 4-bin classification (< 1 Å / 1–2 Å / 2–4 Å / > 4 Å mean absolute distance error). Trained to predict the model's own uncertainty, analogous to AlphaFold2's pLDDT head.
 
 ### 2.3 Training Objective
 
-We train with **distogram cross-entropy + contact BCE**:
+We train with **distogram cross-entropy + contact BCE + (Transformer only) auxiliary losses**:
 
-$$\mathcal{L} = \mathcal{L}_{\text{distogram CE}} + \lambda \cdot \mathcal{L}_{\text{contact BCE}}, \quad \lambda = 0.5$$
+$$\mathcal{L} = \mathcal{L}_{\text{distogram CE}} + 0.5 \cdot \mathcal{L}_{\text{contact BCE}} + 0.2 \cdot \mathcal{L}_{\text{SS CE}} + 0.1 \cdot \mathcal{L}_{\text{pLDDT CE}}$$
 
-**Distogram cross-entropy**: classifies each pairwise distance into one of 64 bins over 2–22 Å plus one "too far" bin (65 total). This is the same objective used in AlphaFold — binned classification provides sharper gradients and better-calibrated confidence than MSE regression.
+**Distogram cross-entropy**: classifies each pairwise distance into one of 64 bins over 2–22 Å plus one “too far” bin (65 total). This is the same objective as AlphaFold — binned classification gives sharper gradients and better-calibrated confidence than MSE.
 
-**Contact BCE**: binary contact classification (< 8 Å) on expected distances from distogram softmax. Mini-batch training (batch_size=16) with **AdamW** (weight_decay=1e-4), **cosine annealing**, gradient clipping 1.0.
+**Contact BCE**: binary contact classification (< 8 Å) on expected distances from distogram softmax.
+
+**Secondary structure CE** (Transformer only): cross-entropy over 3 classes per residue. Labels are derived from the ground-truth distance matrix using Cα geometry rules with no external tools.
+
+**pLDDT CE** (Transformer only): cross-entropy over 4 confidence bins per residue. The target is derived at each training step from the model's current mean absolute distance error per residue — forcing the model to know what it doesn't know.
+
+Mini-batch training (batch_size=16) with **AdamW** (weight_decay=1e-4), **cosine annealing**, gradient clipping 1.0.
 
 ### 2.4 Structure Reconstruction
 
@@ -212,15 +221,27 @@ The conceptual gap:
 
 ### Limitations and next steps
 
-Concretely, the next improvements in priority order are:
+The following improvements have been implemented over the initial design:
+
+- ✅ **Distogram cross-entropy** (64 bins, 2–22 Å) replacing MSE regression
+- ✅ **Evoformer-lite** with pair-biased attention and pair track update
+- ✅ **Pair-biased attention bug fix**: manual scaled dot-product attention with correct per-batch, per-head pair bias (previous version averaged over batch dimension)
+- ✅ **Prediction recycling** (3 recycles, stop-gradient), following AlphaFold2 §1.8
+- ✅ **Secondary structure auxiliary head** (3-class, Cα-geometry-derived labels, no external tools)
+- ✅ **Per-residue pLDDT confidence head** (4-class, trained on per-step distance error)
+- ✅ **lDDT-proxy regulariser** in gradient MDS structure reconstruction
+- ✅ **True paired t-test** in statistical benchmark (`scipy.stats.ttest_rel` on matched test samples)
+- ✅ **k-fold cross-validation** in ablation study (`--kfold --k 3`)
+
+The remaining improvements in priority order are:
 
 1. **PSSM from PSI-BLAST** (`src/pssm.py` is ready) — run 3 iterations of PSI-BLAST against UniRef50 for each input sequence to build a per-position profile. This is the single largest improvement possible without changing the architecture.
 
-2. **Binned distogram** — replace regression with 64-class distance binning (like AlphaFold). Binned cross-entropy provides better-calibrated confidence and sharper contact predictions.
+2. **Triangle multiplication** — AlphaFold2's full Evoformer uses triangle multiplicative updates for the pair representation. Our outer-product mean is a simplified substitute; full triangle updates would capture triangular distance constraints (if $d_{ij}$ and $d_{jk}$ are known, $d_{ik}$ is constrained).
 
-3. **Evoformer-lite** — replace the per-residue Transformer with a pair-bias Transformer that updates pair representations directly, enabling the model to reason about triangles of residues.
+3. **End-to-end training with lDDT loss** — backpropagate through the structure module with a differentiable lDDT score, allowing the coordinate optimiser to be jointly trained rather than post-processed.
 
-4. **End-to-end training with lDDT loss** — backpropagate through the structure module with a differentiable lDDT loss, allowing the coordinate optimiser to be trained rather than post-processed.
+4. **MSA co-evolutionary signal** — the core bottleneck. Training on real MSAs gives the single largest quality jump. Our PSSM module (`src/pssm.py`) is the first step; full MSA processing requires running jackhmmer/HHblits over UniRef90.
 
 ---
 
@@ -268,45 +289,6 @@ python src/evaluate.py --model transformer --load-model model_final_real.pt \
 - Chou, P.Y. & Fasman, G.D. (1974). Prediction of protein conformation. *Biochemistry*, 13(2), 222–245.
 - Mariani, V. et al. (2013). lDDT: a local superposition-free score for comparing protein structures and models. *Bioinformatics*, 29(21), 2722–2728.
 - Zhang, Y. & Skolnick, J. (2004). Scoring function for automated assessment of protein structure template quality. *Proteins*, 57(4), 702–710.
-
-
-**Aashish Kharel** · [github.com/immortal71/Scarfold](https://github.com/immortal71/Scarfold)
-
----
-
-## Abstract
-
-We present **Scarfold**, a from-scratch implementation of an AlphaFold-inspired protein structure prediction pipeline. Given only an amino-acid sequence, Scarfold predicts pairwise inter-residue distances, reconstructs 3-D coordinates via gradient-based metric optimisation, and evaluates structural quality using pLDDT, local lDDT, contact-map F1, and TM-score. We introduce three key improvements over naïve one-hot baselines: (1) **rich sequence encodings** combining BLOSUM62 substitution profiles with physicochemical properties (48 features/residue vs 20), (2) a **Transformer encoder** with per-residue attention for long-range contact modelling, and (3) a **combined MSE + contact BCE loss** with cosine learning-rate annealing. On a curated benchmark of small single-chain proteins, the Transformer achieves statistically significant improvements in contact-map F1 over the MLP baseline ($p < 0.05$).
-
----
-
-## 1 Introduction
-
-Protein structure prediction is one of the central problems in structural biology. AlphaFold2 [Jumper et al., 2021] solved it for most proteins using multiple sequence alignments (MSA) and a deep Evoformer network. Understanding *why* it works requires implementing a simplified version from components.
-
-Scarfold reproduces the conceptual pipeline: sequence → distogram → 3-D structure → quality scoring, using only standard PyTorch. The goals are:
-1. Show that even a simple Transformer captures more long-range sequence context than an MLP.
-2. Show that richer input features (BLOSUM62 + physicochemical) measurably improve predictions over one-hot encoding.
-3. Show that gradient-based structure reconstruction outperforms closed-form MDS on noisy predicted distance matrices.
-4. Provide a reproducible benchmark comparing both architectures with statistical tests.
-
----
-
-## 2 Methods
-
-### 2.1 Input Features
-
-Previous versions used a 20-dimensional one-hot encoding per residue. We replace this with a **48-dimensional rich encoding**:
-
-| Block | Dim | Description |
-|---|---|---|
-| One-hot | 20 | Identity of residue |
-| BLOSUM62 | 20 | Substitution log-odds row (evolutionary signal) |
-| Physicochemical | 8 | Hydrophobicity, charge, polarity, volume, aromaticity, helix/sheet/coil propensity |
-
-BLOSUM62 gives approximate evolutionary context — it encodes which amino acids are functionally similar — without requiring a full MSA. Physicochemical features encode properties that directly influence tertiary structure (hydrophobic core formation, charge-charge interactions, helix formation).
-
-### 2.2 Model Architectures
 
 **MLP baseline** — flattens the L×48 encoding and passes it through two hidden layers (1024 → 512 → L²) with LayerNorm and Dropout. Output is reshaped into a symmetric L×L distance matrix.
 

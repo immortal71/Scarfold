@@ -246,36 +246,6 @@ if __name__ == '__main__':
 
     print('Done.')
 
-    os.makedirs(checkpoint_dir, exist_ok=True)
-    best_val = float('inf')
-    history = []
-
-    for ep in range(1, epochs + 1):
-        model.train()
-        model = md.train_simple(model, train_X, train_Y, epochs=1, lr=lr, device=device)
-
-        model.eval()
-        with np.errstate(all='ignore'):
-            pred_train = np.stack([md.predict(model, x, device=device) for x in train_X])
-            pred_val = np.stack([md.predict(model, x, device=device) for x in val_X])
-
-        train_loss = np.mean((pred_train - train_Y) ** 2)
-        val_loss = np.mean((pred_val - val_Y) ** 2)
-
-        history.append({'epoch': ep, 'train_loss': float(train_loss), 'val_loss': float(val_loss)})
-
-        if verbose:
-            print(f"Epoch {ep:03d}: train MSE={train_loss:.6f}, val MSE={val_loss:.6f}")
-
-        if val_loss < best_val:
-            best_val = val_loss
-            out_path = os.path.join(checkpoint_dir, f'best_model_epoch_{ep}.pt')
-            md.save_model(model, out_path)
-            if verbose:
-                print(f"  => Saved best model to {out_path} (val_loss improved)")
-
-    return model, history
-
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Train the protein folding predictor with checkpoints')

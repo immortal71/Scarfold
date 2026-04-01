@@ -79,15 +79,25 @@ class _PairBiasTransformerLayer(nn.Module):
 
     The pair bias lets the attention pattern be informed by the current pair
     representation — a key idea from AlphaFold2's Evoformer.
+
+    Uses manual scaled dot-product attention so the (B, nhead, L, L) pair bias
+    is added *per sample per head* without any batch averaging.
     """
     def __init__(self, hidden, pair_dim, nhead, dropout=0.1):
         super().__init__()
+        assert hidden % nhead == 0, f'hidden ({hidden}) must be divisible by nhead ({nhead})'
         self.nhead = nhead
+        self.head_dim = hidden // nhead
         self.norm_seq = nn.LayerNorm(hidden)
         self.norm_pair = nn.LayerNorm(pair_dim)
-        # Project pair features to per-head bias (one scalar per head per i,j)
+        # Project pair features to per-head bias (one scalar per head per pair)
         self.pair_to_bias = nn.Linear(pair_dim, nhead, bias=False)
-        self.attn = nn.MultiheadAttention(hidden, nhead, dropout=dropout, batch_first=True)
+        # Manual QKV projections (replaces nn.MultiheadAttention for correct batching)
+        self.q_proj = nn.Linear(hidden, hidden, bias=False)
+        self.k_proj = nn.Linear(hidden, hidden, bias=False)
+        self.v_proj = nn.Linear(hidden, hidden, bias=False)
+        self.out_proj = nn.Linear(hidden, hidden)
+        self.attn_dropout = nn.Dropout(dropout)
         self.ff = nn.Sequential(
             nn.LayerNorm(hidden),
             nn.Linear(hidden, hidden * 4),
@@ -96,7 +106,7 @@ class _PairBiasTransformerLayer(nn.Module):
             nn.Linear(hidden * 4, hidden),
             nn.Dropout(dropout),
         )
-        # Pair update: triangle-inspired outer-product mean
+        # Pair update: outer-product mean (simplified triangle update)
         self.pair_update = nn.Sequential(
             nn.LayerNorm(pair_dim),
             nn.Linear(pair_dim, pair_dim),
@@ -110,24 +120,34 @@ class _PairBiasTransformerLayer(nn.Module):
         seq:  (B, L, hidden)
         pair: (B, L, L, pair_dim)
         """
-        B, L, _ = seq.shape
+        B, L, H = seq.shape
+        hd = self.head_dim
+
         # Pre-LN on sequence track
         seq_n = self.norm_seq(seq)
-        # Build pair bias: (B, L, L, nhead) → (B*nhead, L, L)
-        bias = self.pair_to_bias(self.norm_pair(pair))   # (B, L, L, nhead)
-        bias = bias.permute(0, 3, 1, 2).reshape(B * self.nhead, L, L)
-        # Expand seq for batched attention with per-head bias
-        seq_exp = seq_n.unsqueeze(1).expand(B, self.nhead, L, -1).reshape(B * self.nhead, L, -1)
-        # MultiheadAttention expects (B, L, d) with attn_mask (B*nhead, L, L)
-        # We use the standard API: pass bias as attn_mask
-        attn_out, _ = self.attn(
-            seq_n, seq_n, seq_n,
-            attn_mask=bias.mean(0),   # average over batch for mask (B=1 typical)
-        )
-        seq = seq + attn_out
+
+        # Pair bias: (B, L, L, nhead) → (B, nhead, L, L) — per sample, per head
+        bias = self.pair_to_bias(self.norm_pair(pair)).permute(0, 3, 1, 2)
+
+        # Scaled dot-product attention with correct per-batch pair bias
+        scale = hd ** -0.5
+        Q = self.q_proj(seq_n).view(B, L, self.nhead, hd).transpose(1, 2)  # (B, nhead, L, hd)
+        K = self.k_proj(seq_n).view(B, L, self.nhead, hd).transpose(1, 2)
+        V = self.v_proj(seq_n).view(B, L, self.nhead, hd).transpose(1, 2)
+
+        attn_scores = torch.einsum('bhid,bhjd->bhij', Q, K) * scale   # (B, nhead, L, L)
+        attn_scores = attn_scores + bias                               # add pair bias correctly
+        attn_weights = torch.softmax(attn_scores, dim=-1)
+        attn_weights = self.attn_dropout(attn_weights)
+
+        out = torch.einsum('bhij,bhjd->bhid', attn_weights, V)        # (B, nhead, L, hd)
+        out = out.transpose(1, 2).reshape(B, L, H)                    # (B, L, H)
+        out = self.out_proj(out)
+
+        seq = seq + out
         seq = seq + self.ff(seq)
 
-        # Update pair representation with outer product mean
+        # Update pair representation with outer-product mean
         h_i = seq.unsqueeze(2).expand(B, L, L, -1)
         h_j = seq.unsqueeze(1).expand(B, L, L, -1)
         outer = self.outer_proj(torch.cat([h_i, h_j], dim=-1))
@@ -136,19 +156,31 @@ class _PairBiasTransformerLayer(nn.Module):
 
 
 class TransformerDistancePredictor(nn.Module):
-    """Evoformer-lite Transformer: per-residue track + pair track with attention bias.
+    """Evoformer-lite Transformer with recycling, secondary structure, and confidence heads.
 
-    This is the key architectural upgrade over the plain Transformer:
-    - Pair representation is updated at every layer (not just at the end)
-    - Attention is biased by the current pair features (AlphaFold2 Evoformer idea)
-    - Outputs a distogram (NUM_BINS+1 logits per pair) instead of a scalar
+    Implements key ideas from AlphaFold2:
+    - **Pair-biased attention**: pair(i,j) features directly bias residue-track attention
+    - **Pair track update**: pair representation updated at every Evoformer-lite layer
+    - **Recycling** (AlphaFold2 Section 1.8): distogram logits are fed back into the
+      pair representation for N_recycles passes (stop-gradient), allowing iterative
+      refinement of the prediction.
+    - **Secondary structure head**: 3-class (coil/helix/strand) auxiliary supervision
+      derived from Cα geometry — provides additional training signal without labels.
+    - **pLDDT confidence head**: 4-bin per-residue confidence prediction, trained to
+      predict the model's own distance error. Matches AlphaFold2's plDDT head concept.
+
+    API:
+        forward(x)           → (B, L, L, n_bins) distogram logits  [backward-compat]
+        forward_full(x)      → (logits, ss_logits, plddt_logits)
     """
     def __init__(self, seq_len, aa_dim=RICH_AA_DIM, hidden=256, pair_dim=64,
-                 nhead=4, num_layers=4, n_bins=NUM_BINS + 1, dropout=0.1):
+                 nhead=4, num_layers=4, n_bins=NUM_BINS + 1, dropout=0.1,
+                 num_recycles=3):
         super().__init__()
         self.seq_len = seq_len
         self.aa_dim = aa_dim
         self.n_bins = n_bins
+        self.num_recycles = num_recycles
 
         # Residue-level input projection + positional embedding
         self.residue_proj = nn.Linear(aa_dim, hidden)
@@ -157,7 +189,7 @@ class TransformerDistancePredictor(nn.Module):
         # Initial pair embedding: outer sum of projected residues
         self.pair_init_i = nn.Linear(hidden, pair_dim)
         self.pair_init_j = nn.Linear(hidden, pair_dim)
-        # Relative-position embedding (binned sequence separation)
+        # Relative-position embedding (binned sequence separation, clipped ±32)
         max_rel_pos = 32
         self.rel_pos_embed = nn.Embedding(2 * max_rel_pos + 2, pair_dim)
         self.max_rel_pos = max_rel_pos
@@ -168,12 +200,31 @@ class TransformerDistancePredictor(nn.Module):
             for _ in range(num_layers)
         ])
 
-        # Final distogram head: pair → n_bins logits
+        # Distogram head: pair_dim → n_bins logits per residue pair
         self.distogram_head = nn.Sequential(
             nn.LayerNorm(pair_dim),
             nn.Linear(pair_dim, pair_dim),
             nn.GELU(),
             nn.Linear(pair_dim, n_bins),
+        )
+
+        # Recycling gate: project previous distogram output back to pair_dim
+        self.recycle_pair_proj = nn.Linear(n_bins, pair_dim)
+
+        # Aux head 1: per-residue secondary structure (3 classes: coil / helix / strand)
+        self.ss_head = nn.Sequential(
+            nn.LayerNorm(hidden),
+            nn.Linear(hidden, 64),
+            nn.GELU(),
+            nn.Linear(64, 3),
+        )
+
+        # Aux head 2: per-residue pLDDT confidence (4 bins: >4 / 2-4 / 1-2 / <1 Å error)
+        self.plddt_head = nn.Sequential(
+            nn.LayerNorm(hidden),
+            nn.Linear(hidden, 64),
+            nn.GELU(),
+            nn.Linear(64, 4),
         )
 
     def _rel_pos(self, L, device):
@@ -183,31 +234,109 @@ class TransformerDistancePredictor(nn.Module):
         rel = rel + self.max_rel_pos   # shift to [0, 2*max_rel_pos]
         return rel
 
-    def forward(self, x):
-        B, L, _ = x.shape
-        # Residue track
-        h = self.residue_proj(x) + self.pos_embed[:L].unsqueeze(0)
-
-        # Initial pair representation: outer sum + relative-position bias
-        pi = self.pair_init_i(h)   # (B, L, pair_dim)
+    def _init_pair_repr(self, h, L, device):
+        """Build initial pair representation from residue embeddings + relative position."""
+        pi = self.pair_init_i(h)
         pj = self.pair_init_j(h)
-        pair = pi.unsqueeze(2) + pj.unsqueeze(1)   # (B, L, L, pair_dim)
-        rel_idx = self._rel_pos(L, x.device)       # (L, L)
-        pair = pair + self.rel_pos_embed(rel_idx).unsqueeze(0)   # broadcast B
+        pair = pi.unsqueeze(2) + pj.unsqueeze(1)                    # (B, L, L, pair_dim)
+        rel_idx = self._rel_pos(L, device)
+        pair = pair + self.rel_pos_embed(rel_idx).unsqueeze(0)       # broadcast B
+        return pair
 
-        # Evoformer-lite stack
-        for layer in self.layers:
-            h, pair = layer(h, pair)
+    def forward_full(self, x, num_recycles=None):
+        """Full forward pass with recycling and all auxiliary outputs.
 
-        # Distogram head — symmetrise logits
-        logits = self.distogram_head(pair)              # (B, L, L, n_bins)
-        logits = (logits + logits.transpose(1, 2)) / 2.0
-        return logits   # raw logits
+        Args:
+            x:            (B, L, aa_dim) input sequence features
+            num_recycles: override self.num_recycles if provided
+
+        Returns:
+            logits:       (B, L, L, n_bins)  distogram logits
+            ss_logits:    (B, L, 3)           secondary structure (coil/helix/strand)
+            plddt_logits: (B, L, 4)           per-residue pLDDT confidence bins
+        """
+        B, L, _ = x.shape
+        n_rec = num_recycles if num_recycles is not None else self.num_recycles
+
+        # Residue embedding — fixed across recycles (single-sequence Evoformer convention)
+        h_init = self.residue_proj(x) + self.pos_embed[:L].unsqueeze(0)   # (B, L, hidden)
+
+        # Initial pair representation
+        pair = self._init_pair_repr(h_init, L, x.device)   # (B, L, L, pair_dim)
+
+        for cycle in range(max(n_rec, 1)):
+            # Reinitialise residue track at each recycle
+            h = h_init
+            for layer in self.layers:
+                h, pair = layer(h, pair)
+
+            if cycle < max(n_rec, 1) - 1:
+                # Recycle: update pair with stop-gradient distogram from this cycle
+                logits_prev = self.distogram_head(pair)
+                logits_prev = (logits_prev + logits_prev.transpose(1, 2)) / 2.0
+                pair = pair + self.recycle_pair_proj(logits_prev.detach())
+
+        # Final outputs from last cycle
+        logits = self.distogram_head(pair)
+        logits = (logits + logits.transpose(1, 2)) / 2.0   # symmetrise  (B, L, L, n_bins)
+        ss_logits = self.ss_head(h)                         # (B, L, 3)
+        plddt_logits = self.plddt_head(h)                   # (B, L, 4)
+        return logits, ss_logits, plddt_logits
+
+    def forward(self, x, num_recycles=None):
+        """Standard forward — returns distogram logits only (backward-compatible)."""
+        logits, _, _ = self.forward_full(x, num_recycles=num_recycles)
+        return logits   # (B, L, L, n_bins)
 
 
-def get_model(model_type, seq_len, aa_dim=RICH_AA_DIM):
+# ── Auxiliary target derivation ──────────────────────────────────────────────
+
+def ss_labels_from_dists(dist_mat):
+    """Derive 3-class secondary structure labels from a Cα distance matrix.
+
+    Labels: 0 = coil, 1 = helix (α-helix), 2 = strand (β-extended)
+
+    Rules (Chou & Fasman, 1974; standard Cα distance geometry):
+      α-helix:  d(i, i+3) < 6.0 Å  AND  d(i, i+4) < 7.0 Å   (ideal: ~5.5, 6.2 Å)
+      β-strand: d(i, i+2) > 5.5 Å  (extended chain; ideal β: ~6.7 Å for i+2)
+      coil:     all other residues
+    """
+    L = dist_mat.shape[0]
+    labels = np.zeros(L, dtype=np.int64)
+    for i in range(L):
+        d3 = float(dist_mat[i, i + 3]) if i + 3 < L else 99.0
+        d4 = float(dist_mat[i, i + 4]) if i + 4 < L else 99.0
+        d2 = float(dist_mat[i, i + 2]) if i + 2 < L else 99.0
+        if d3 < 6.0 and d4 < 7.0:   # α-helix geometry
+            labels[i] = 1
+        elif d2 > 5.5:               # extended/β-strand geometry
+            labels[i] = 2
+        # else: labels[i] = 0 (coil)
+    return labels
+
+
+def plddt_bins_from_dist_error(pred_dists, true_dists):
+    """Per-residue pLDDT bin labels (0-3) derived from mean absolute distance error.
+
+    Bins match AlphaFold2's pLDDT colour-coding convention:
+      3: mean error < 1 Å  (very high confidence — blue)
+      2: mean error 1–2 Å  (confident — yellow)
+      1: mean error 2–4 Å  (low confidence — orange)
+      0: mean error > 4 Å  (very low confidence — red)
+    """
+    L = pred_dists.shape[0]
+    mask = 1.0 - np.eye(L)
+    mae = (np.abs(pred_dists - true_dists) * mask).sum(1) / (mask.sum(1) + 1e-8)  # (L,)
+    bins = np.zeros(L, dtype=np.int64)
+    bins[mae < 4.0] = 1
+    bins[mae < 2.0] = 2
+    bins[mae < 1.0] = 3
+    return bins
+
+
+def get_model(model_type, seq_len, aa_dim=RICH_AA_DIM, num_recycles=3):
     if model_type.lower() == 'transformer':
-        return TransformerDistancePredictor(seq_len, aa_dim=aa_dim)
+        return TransformerDistancePredictor(seq_len, aa_dim=aa_dim, num_recycles=num_recycles)
     return DistancePredictor(seq_len, aa_dim=aa_dim)
 
 
@@ -260,17 +389,50 @@ def _contact_bce_loss(logits_or_dists, true_dists, threshold=8.0, is_logits=True
 
 # ── Training ──────────────────────────────────────────────────────────────────
 
-def train_epoch(model, X, Y, optimizer, device='cpu', contact_weight=0.5):
-    """One epoch of distogram cross-entropy + contact BCE training (mini-batch)."""
+def train_epoch(model, X, Y, optimizer, device='cpu', contact_weight=0.5,
+                ss_weight=0.2, plddt_weight=0.1):
+    """One step: distogram CE + contact BCE + (Transformer only) SS + pLDDT aux losses.
+
+    For the MLP, only distogram CE and contact BCE are used.
+    For the Transformer, two additional auxiliary heads are trained:
+      - Secondary structure (coil/helix/strand) derived from Cα distance geometry
+      - Per-residue pLDDT confidence bins derived from mean absolute distance error
+    Both auxiliary losses provide extra gradient signal without requiring external labels.
+    """
     model.train()
     model.to(device)
     X_t = torch.tensor(X, dtype=torch.float32, device=device)
     Y_t = torch.tensor(Y, dtype=torch.float32, device=device)
     optimizer.zero_grad()
-    logits = model(X_t)           # (B, L, L, n_bins)
+
+    is_transformer = hasattr(model, 'forward_full')
+
+    if is_transformer:
+        logits, ss_logits, plddt_logits = model.forward_full(X_t)
+    else:
+        logits = model(X_t)                   # (B, L, L, n_bins)
+
     loss_dg = distogram_loss(logits, Y_t)
     loss_cb = _contact_bce_loss(logits, Y_t, is_logits=True)
     loss = loss_dg + contact_weight * loss_cb
+
+    if is_transformer:
+        B = X.shape[0]
+        # ── Secondary-structure auxiliary loss ──────────────────────────────
+        if ss_weight > 0.0:
+            ss_lbl = np.stack([ss_labels_from_dists(Y[b]) for b in range(B)])  # (B, L)
+            ss_lbl_t = torch.tensor(ss_lbl, dtype=torch.long, device=device)
+            loss_ss = nn.functional.cross_entropy(ss_logits.reshape(-1, 3), ss_lbl_t.reshape(-1))
+            loss = loss + ss_weight * loss_ss
+        # ── pLDDT confidence auxiliary loss ─────────────────────────────────
+        if plddt_weight > 0.0:
+            with torch.no_grad():
+                pred_d_np = bin_to_dist(logits).cpu().numpy()        # (B, L, L)
+            pbin = np.stack([plddt_bins_from_dist_error(pred_d_np[b], Y[b]) for b in range(B)])
+            pbin_t = torch.tensor(pbin, dtype=torch.long, device=device)
+            loss_pl = nn.functional.cross_entropy(plddt_logits.reshape(-1, 4), pbin_t.reshape(-1))
+            loss = loss + plddt_weight * loss_pl
+
     loss.backward()
     torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
     optimizer.step()
@@ -320,6 +482,34 @@ def predict(model, seq_onehot, device='cpu'):
     return dist
 
 
+def predict_with_confidence(model, seq_onehot, device='cpu'):
+    """Run inference and return (distance_matrix, per-residue pLDDT score 0-100).
+
+    The pLDDT confidence score comes from the model's own pLDDT head (Transformer)
+    or is set to a uniform 70.0 for the MLP baseline.
+
+    Bin midpoints: [0→25, 1→60, 2→80, 3→95] matching AlphaFold2 colour coding.
+
+    Returns:
+        dist:   np.array (L, L)  expected distance matrix in Å
+        plddt:  np.array (L,)    per-residue pLDDT confidence (0-100)
+    """
+    model.to(device)
+    model.eval()
+    with torch.no_grad():
+        x = torch.tensor(seq_onehot[None], dtype=torch.float32, device=device)
+        if hasattr(model, 'forward_full'):
+            logits, _, plddt_logits = model.forward_full(x)
+            probs = torch.softmax(plddt_logits[0], dim=-1).cpu().numpy()  # (L, 4)
+            bin_midpoints = np.array([25.0, 60.0, 80.0, 95.0])
+            plddt = (probs * bin_midpoints).sum(-1)                        # (L,)
+        else:
+            logits = model(x)
+            plddt = np.full(seq_onehot.shape[0], 70.0, dtype=np.float32)
+        dist = bin_to_dist(logits[0]).cpu().numpy()
+    return dist, plddt
+
+
 def contact_map_score(pred_dists, true_dists, threshold=8.0):
     from src.utils import contact_map_metrics
     return contact_map_metrics(pred_dists, true_dists, threshold=threshold)
@@ -366,13 +556,18 @@ def load_model(model_type, seq_len, path, device='cpu'):
 
     try:
         model = get_model(model_type, seq_len, aa_dim=aa_dim)
-        model.load_state_dict(state)
+        # strict=False: tolerates new aux heads (ss_head, plddt_head, recycle_pair_proj)
+        # that may be absent in older checkpoints; new heads stay randomly initialised.
+        missing, unexpected = model.load_state_dict(state, strict=False)
+        if missing:
+            print(f'  Note: {len(missing)} new parameters initialised randomly '
+                  f'(new arch features: SS head, pLDDT head, recycling).')
     except RuntimeError:
         if inferred_len is None:
             raise
         print(f'  Note: resizing model seq_len {seq_len}→{inferred_len} to match saved weights.')
         model = get_model(model_type, inferred_len, aa_dim=aa_dim)
-        model.load_state_dict(state)
+        model.load_state_dict(state, strict=False)
 
     model.to(device)
     model.eval()

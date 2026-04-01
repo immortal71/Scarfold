@@ -18,7 +18,7 @@
 8. [Interactive outputs](#interactive-outputs)
 9. [Ideas to extend](#ideas-to-extend)
 
-> **New in latest commit:** PSSM module (`src/pssm.py`), systematic ablation study (`src/ablation.py`), 3 naive baselines in `benchmark.py`, CATH S35 downloader, `--pssm` flag in `evaluate.py`, complete `report/report.md`.
+> **New in latest commit (weeks 3–4):** Prediction **recycling** (3 recycles, stop-gradient), **secondary structure auxiliary head** (coil/helix/strand), **per-residue pLDDT confidence head** (4-bin), fixed **pair-bias attention** (correct per-batch per-head), **true paired t-test** in benchmark, **k-fold CV** in ablation, `show=False` for headless visualize, PSSM module, 11-condition ablation study, CATH S35 downloader, complete `report/report.md`.
 
 ---
 
@@ -106,22 +106,32 @@ Input  (B, L, 48)
    │
    ▼  Initial pair representation  (outer sum + relative-position embedding)
    │
-   ▼  Evoformer-lite stack  (4 layers):
-   │    ┌── Pair bias attention: pair(i,j) biases attention between residues i, j
+   ▼  Evoformer-lite stack  (4 layers)  ×  N_recycles = 3:
+   │    ┌── Pair-bias attention: pair(i,j) biases attention between residues i,j
+   │    │     (manual QKV proj — correct per-batch per-head, no batch averaging)
    │    ├── Pair track update: outer-product mean of residue embeddings
    │    └── Pre-LN FFN on residue track
    │
-   ▼  Distogram head  →  (B, L, L, 65 bins)  →  softmax  →  expected distance
+   ▼  After each recycle (except last): feed stop-gradient distogram logits
+   │   back into pair representation via learned linear layer
+   │
+   ▼  Final outputs:
+        │
+        ├── Distogram head  →  (B, L, L, 65 bins)  →  expected distance
+        ├── SS head         →  (B, L, 3)  coil / helix / strand
+        └── pLDDT head      →  (B, L, 4)  confidence bins (< 1 / 1–2 / 2–4 / > 4 Å error)
 ```
 
 ### Training objective
 
-Combined loss over **64+1 distance bins** (like AlphaFold's distogram head):
+Combined loss over **64+1 distance bins** + auxiliary heads (Transformer only):
 
-$$\mathcal{L} = \mathcal{L}_{\text{distogram CE}} + 0.5 \cdot \mathcal{L}_{\text{contact BCE}}$$
+$$\mathcal{L} = \mathcal{L}_{\text{distogram CE}} + 0.5 \cdot \mathcal{L}_{\text{contact BCE}} + 0.2 \cdot \mathcal{L}_{\text{SS CE}} + 0.1 \cdot \mathcal{L}_{\text{pLDDT CE}}$$
 
-- **Distogram cross-entropy**: classifies each pair distance into one of 64 bins covering 2–22 Å + one "too-far" bin. Far sharper gradients than MSE regression.
-- **Contact BCE**: additional binary classification for pairs < 8 Å.
+- **Distogram CE**: 64 uniform bins over 2–22 Å + 1 "too-far" bin. Same as AlphaFold's distogram head — far sharper gradients than MSE regression.
+- **Contact BCE**: binary classification for pairs < 8 Å.
+- **Secondary structure CE**: unsupervised 3-class labels derived from Cα geometry (no DSSP needed).
+- **pLDDT CE**: 4-bin per-residue confidence derived from current-step mean absolute distance error.
 - Optimizer: **AdamW** + **cosine annealing** LR + gradient clipping 1.0.
 
 ### Structure reconstruction

@@ -225,26 +225,26 @@ def run_training(args):
         if len(seqs) < 2:
             print(f'Found only {len(seqs)} PDB entries; falling back to synthetic dataset for stability.')
             seqs, dists = utils.make_synthetic_dataset(num=args.samples, L=args.length, seed=42)
-            onehots = np.stack([utils.one_hot(s) for s in seqs])
+            onehots = np.stack([utils.rich_encoding(s) for s in seqs])
             n_train = int(args.samples * 0.8)
             train_X, val_X = onehots[:n_train], onehots[n_train:]
             train_Y, val_Y = dists[:n_train], dists[n_train:]
-            model = md.get_model(args.model, args.length)
+            model = md.get_model(args.model, args.length, aa_dim=utils.RICH_AA_DIM)
         else:
-            onehots = np.stack([utils.one_hot(s.ljust(args.max_residues, 'A')[:args.max_residues]) for s in seqs])
+            onehots = np.stack([utils.rich_encoding(s.ljust(args.max_residues, 'A')[:args.max_residues]) for s in seqs])
             n_train = max(1, int(len(seqs) * 0.8))
             train_X, val_X = onehots[:n_train], onehots[n_train:]
             train_Y, val_Y = dists[:n_train], dists[n_train:]
             model_len = min(args.max_residues, onehots.shape[1])
             print(f'Using {len(seqs)} PDB entries for training; seq_len={model_len}.')
-            model = md.get_model(args.model, model_len)
+            model = md.get_model(args.model, model_len, aa_dim=utils.RICH_AA_DIM)
     else:
         seqs, dists = utils.make_synthetic_dataset(num=args.samples, L=args.length, seed=42)
-        onehots = np.stack([utils.one_hot(s) for s in seqs])
+        onehots = np.stack([utils.rich_encoding(s) for s in seqs])
         n_train = int(args.samples * 0.8)
         train_X, val_X = onehots[:n_train], onehots[n_train:]
         train_Y, val_Y = dists[:n_train], dists[n_train:]
-        model = md.get_model(args.model, args.length)
+        model = md.get_model(args.model, args.length, aa_dim=utils.RICH_AA_DIM)
 
     model, history = tr.train_and_validate(model, train_X, train_Y, val_X, val_Y,
                                            epochs=args.epochs, lr=args.lr,
