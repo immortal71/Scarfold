@@ -1,0 +1,239 @@
+import os
+import numpy as np
+AA_LIST = list('ACDEFGHIKLMNPQRSTVWY')
+AA_TO_IDX = {a:i for i,a in enumerate(AA_LIST)}
+HYDRO = {
+    'A': 1.8,'C':2.5,'D':-3.5,'E':-3.5,'F':2.8,'G':-0.4,'H':-3.2,'I':4.5,'K':-3.9,'L':3.8,'M':1.9,'N':-3.5,'P':-1.6,'Q':-3.5,'R':-4.5,'S':-0.8,'T':-0.7,'V':4.2,'W':-0.9,'Y':-1.3
+}
+
+def one_hot(seq):
+    L = len(seq)
+    mat = np.zeros((L,20),dtype=np.float32)
+    for i,a in enumerate(seq):
+        mat[i,AA_TO_IDX.get(a,'A')] = 1.0
+    return mat
+
+def synthetic_native_coords(seq, seed=0):
+    """Generate synthetic 3D coords biased by hydrophobicity for demonstration."""
+    rng = np.random.RandomState(seed)
+    L = len(seq)
+    coords = np.zeros((L,3),dtype=np.float32)
+    for i in range(1,L):
+        a = seq[i]
+        h = HYDRO.get(a,0.0)
+        step_len = max(0.5, 2.0 - 0.1*h)
+        dirv = rng.normal(size=3)
+        dirv /= np.linalg.norm(dirv)
+        coords[i] = coords[i-1] + dirv * step_len
+    return coords
+
+def coords_to_distances(coords):
+    diff = coords[:,None,:] - coords[None,:,:]
+    d = np.sqrt((diff**2).sum(-1))
+    return d
+
+def make_synthetic_dataset(num=200, L=40, seed=1):
+    rng = np.random.RandomState(seed)
+    seqs = []
+    dists = []
+    for i in range(num):
+        seq = ''.join(rng.choice(AA_LIST, size=L))
+        coords = synthetic_native_coords(seq, seed=seed+i)
+        d = coords_to_distances(coords)
+        seqs.append(seq)
+        dists.append(d.astype(np.float32))
+    return seqs, np.stack(dists)
+
+def classical_mds(dist_mat, dim=3):
+    """Classical MDS (Torgerson) to get coordinates from distances."""
+    n = dist_mat.shape[0]
+    D2 = dist_mat**2
+    J = np.eye(n) - np.ones((n,n))/n
+    B = -0.5 * J.dot(D2).dot(J)
+    evals, evecs = np.linalg.eigh(B)
+    idx = np.argsort(evals)[::-1]
+    evals = evals[idx]
+    evecs = evecs[:,idx]
+    w = np.sqrt(np.clip(evals, 0, None))
+    coords = evecs[:,:dim] * w[:dim]
+    return coords
+
+def kabsch_alignment(P, Q):
+    """Returns rotation matrix and translation vector to align P to Q."""
+    assert P.shape == Q.shape and P.shape[1] == 3
+    P_centroid = P.mean(axis=0)
+    Q_centroid = Q.mean(axis=0)
+    P_centered = P - P_centroid
+    Q_centered = Q - Q_centroid
+    H = P_centered.T.dot(Q_centered)
+    U, S, Vt = np.linalg.svd(H)
+    d = np.sign(np.linalg.det(Vt.T.dot(U.T)))
+    R = Vt.T.dot(np.diag([1.0, 1.0, d])).dot(U.T)
+    t = Q_centroid - P_centroid.dot(R)
+    return R, t
+
+def apply_transform(coords, R, t):
+    return coords.dot(R) + t
+
+def rmsd_kabsch(P, Q):
+    R, t = kabsch_alignment(P, Q)
+    P_aligned = apply_transform(P, R, t)
+    return np.sqrt(np.mean(np.sum((P_aligned - Q)**2, axis=1))), P_aligned
+
+def compute_plddt_from_distances(pred_dists, true_dists, cutoff=8.0):
+    """Simplified per-residue confidence like pLDDT from distance agreement."""
+    assert pred_dists.shape == true_dists.shape
+    L = pred_dists.shape[0]
+    scores = np.zeros(L, dtype=np.float32)
+    for i in range(L):
+        # include non-self distances only
+        delta = np.abs(pred_dists[i] - true_dists[i])
+        delta[i] = 0.0
+        # logistic-like mapping; tight if errors are small
+        score_ij = 1.0 / (1.0 + np.exp((delta - 1.0) * 2.5))
+        # weight by proximity to focus on relevant contacts
+        weight = np.exp(-true_dists[i] / cutoff)
+        scores[i] = 100.0 * np.sum(score_ij * weight) / (np.sum(weight) + 1e-8)
+    return scores
+
+
+def local_lddt(pred_dists, true_dists, cutoff=15.0):
+    """Simplified local lDDT per residue, similar to AlphaFold's lDDT metric."""
+    assert pred_dists.shape == true_dists.shape
+    L = pred_dists.shape[0]
+    thresholds = [0.5, 1.0, 2.0, 4.0]
+    scores = np.zeros(L, dtype=np.float32)
+    for i in range(L):
+        mask = (np.arange(L) != i) & (true_dists[i] < cutoff)
+        if mask.sum() == 0:
+            scores[i] = 0.0
+            continue
+        delta = np.abs(pred_dists[i, mask] - true_dists[i, mask])
+        score_i = 0.0
+        for t in thresholds:
+            score_i += (delta <= t).sum() / float(mask.sum())
+        scores[i] = 100.0 * (score_i / len(thresholds))
+    return scores
+
+
+def contact_map_metrics(pred_dists, true_dists, threshold=8.0):
+    assert pred_dists.shape == true_dists.shape
+    L = pred_dists.shape[0]
+    mask = np.triu(np.ones((L,L), dtype=bool), k=1)
+    p = pred_dists[mask] < threshold
+    t = true_dists[mask] < threshold
+    tp = np.logical_and(p,t).sum()
+    fp = np.logical_and(p, np.logical_not(t)).sum()
+    fn = np.logical_and(np.logical_not(p), t).sum()
+    precision = tp / (tp + fp + 1e-8)
+    recall = tp / (tp + fn + 1e-8)
+    f1 = 2.0 * precision * recall / (precision + recall + 1e-8)
+    return {
+        'precision': float(precision),
+        'recall': float(recall),
+        'f1': float(f1),
+        'tp': int(tp),
+        'fp': int(fp),
+        'fn': int(fn),
+    }
+
+
+def pdb_ca_coords(pdb_path, chain='A', max_residues=120):
+    """Load CA coords (N residues max) from a PDB file."""
+    from Bio.PDB import PDBParser
+    parser = PDBParser(QUIET=True)
+    structure = parser.get_structure('prot', pdb_path)
+    model = structure[0]
+    coords = []
+    for res in model[chain]:
+        if len(coords) >= max_residues:
+            break
+        if 'CA' in res:
+            coords.append(res['CA'].get_coord())
+    return np.asarray(coords, dtype=np.float32)
+
+
+def pdb_sequence(pdb_path, chain='A', max_residues=120):
+    """Extract one-letter sequence from PDB CA atoms (residues with C-alpha)."""
+    from Bio.PDB import PDBParser
+    from Bio.Data.IUPACData import protein_letters_3to1
+    parser = PDBParser(QUIET=True)
+    structure = parser.get_structure('prot', pdb_path)
+    model = structure[0]
+    seq = []
+    for res in model[chain]:
+        if len(seq) >= max_residues:
+            break
+        if 'CA' not in res:
+            continue
+        resname = res.get_resname().strip().upper()
+        try:
+            seq.append(protein_letters_3to1.get(resname, 'A'))
+        except Exception:
+            seq.append('A')
+    return ''.join(seq)
+
+
+def fetch_pdb(pdb_id, output_dir='data/pdbs'):
+    """Download a PDB file from RCSB by ID and return local path."""
+    from Bio.PDB import PDBList
+    pdb_id = pdb_id.lower()
+    p = PDBList()
+    os.makedirs(output_dir, exist_ok=True)
+    path = p.retrieve_pdb_file(pdb_id, pdir=output_dir, file_format='pdb', overwrite=True)
+    # PDBList returns file path like 'data/pdbs/pdbXXXX.ent'
+    if path.endswith('.gz'):
+        import gzip, shutil
+        out_path = os.path.join(output_dir, f'{pdb_id}.pdb')
+        with gzip.open(path, 'rb') as f_in, open(out_path, 'wb') as f_out:
+            shutil.copyfileobj(f_in, f_out)
+        return out_path
+    return path
+
+
+def fasta_sequence(fasta_path, max_residues=120):
+    """Read first sequence from FASTA and truncate to max_residues."""
+    from Bio import SeqIO
+    rec = next(SeqIO.parse(fasta_path, 'fasta'))
+    seq = str(rec.seq).upper()
+    seq = ''.join([a if a in AA_LIST else 'A' for a in seq])
+    return seq[:max_residues]
+
+
+def sample_pdb_dataset(pdb_dir, chain='A', max_residues=120, min_residues=10):
+    """Load PDB files and produce (seq, dist) pairs for training."""
+    pdb_files = sorted(f for f in os.listdir(pdb_dir) if f.lower().endswith(('.pdb', '.ent')))    
+    seqs = []
+    dists = []
+    for fn in pdb_files:
+        path = os.path.join(pdb_dir, fn)
+        try:
+            seq = pdb_sequence(path, chain=chain, max_residues=max_residues)
+            if len(seq) < min_residues:
+                continue
+            coords = pdb_ca_coords(path, chain=chain, max_residues=max_residues)
+            if coords.shape[0] < min_residues or coords.shape[0] != len(seq):
+                continue
+            d = coords_to_distances(coords)
+            seqs.append(seq)
+            dists.append(d.astype(np.float32))
+        except Exception:
+            continue
+    if len(seqs) == 0:
+        raise ValueError(f'No valid PDB data found in {pdb_dir} for chain {chain}')
+    return seqs, np.stack(dists)
+
+
+def tm_score(P, Q, d0=None):
+    """Length-adjusted TM-score proxy for coordinate sets of same length."""
+    assert P.shape == Q.shape
+    L = P.shape[0]
+    if d0 is None:
+        if L < 1:
+            return 0.0
+        d0 = 1.24 * (L - 15) ** (1.0 / 3.0) - 1.8
+        d0 = max(0.5, d0)
+    dist2 = np.sum((P - Q) ** 2, axis=1)
+    scores = 1.0 / (1.0 + dist2 / (d0 ** 2))
+    return float(np.sum(scores) / L)
+
