@@ -18,6 +18,8 @@
 8. [Interactive outputs](#interactive-outputs)
 9. [Ideas to extend](#ideas-to-extend)
 
+> **New in latest commit:** PSSM module (`src/pssm.py`), systematic ablation study (`src/ablation.py`), 3 naive baselines in `benchmark.py`, CATH S35 downloader, `--pssm` flag in `evaluate.py`, complete `report/report.md`.
+
 ---
 
 ## What is this?
@@ -39,7 +41,11 @@ It takes a raw amino-acid sequence and:
  Amino-acid sequence
         │
         ▼
-  One-hot encoding              (20 features per residue)
+  Rich encoding  (48-dim per residue)   ──or──  PSSM encoding (50-dim)
+  ┌─────────────────────────────────┐          ┌──────────────────────────┐
+  │ One-hot (20) + BLOSUM62 (20)    │          │ One-hot + PSSM profile   │
+  │ + Physicochemical (8)           │          │ + Physchem + complexity   │
+  └─────────────────────────────────┘          └──────────────────────────┘
         │
         ▼
  ┌──────────────────┐
@@ -50,8 +56,8 @@ It takes a raw amino-acid sequence and:
   Distance matrix (L × L)      (Å between every residue pair)
         │
         ▼
-  Classical MDS                 (distance → 3-D coordinates)
-        │
+  Gradient MDS (Adam + Huber)   (warm-started from classical MDS)
+        │                       (more robust to noisy predictions)
         ▼
   Kabsch alignment              (rigid-body fit to native)
         │
@@ -70,18 +76,17 @@ It takes a raw amino-acid sequence and:
 
 Two model variants are available, both predicting the symmetric distance matrix **D[i,j]**:
 
-### Input features (48-dim per residue)
+### Input features
 
-Instead of a simple 20-dim one-hot, every residue is encoded as a **48-dimensional vector**:
+Three levels of residue encoding are available:
 
-```
-One-hot      (20) — residue identity
-BLOSUM62     (20) — substitution log-odds row (evolutionary context)
-Physicochemical (8) — hydrophobicity, charge, polarity, volume,
-                       aromaticity, helix/sheet/coil propensity
-```
+| Level | Dim | Contents | Script |
+|---|---|---|---|
+| One-hot | 20 | Residue identity only | default |
+| **Rich** (default) | **48** | One-hot + BLOSUM62 + physicochemical | `utils.rich_encoding()` |
+| **PSSM** | **50** | One-hot + PSSM profile + physicochemical + relative position + local complexity | `src/pssm.py` |
 
-This gives the model evolutionary and biophysical context without requiring a full MSA.
+The rich encoding gives the model evolutionary and biophysical context without requiring a full MSA. The PSSM encoding adds per-position evolutionary profiles — either derived from the sequence itself (pseudo-PSSM, no tools) or from a real PSI-BLAST run.
 
 ### MLP (baseline)
 
@@ -163,9 +168,11 @@ Scarfold/
 │   ├── model.py          ← MLP & Transformer distance predictors (PyTorch)
 │   ├── train.py          ← training loop with checkpointing & CSV logging
 │   ├── evaluate.py       ← evaluation script, saves JSON results
-│   ├── benchmark.py      ← statistical MLP vs Transformer comparison (t-test)
-│   ├── download_data.py  ← download real PDB structures for training
-│   ├── utils.py          ← MDS, Kabsch, pLDDT, lDDT, TM-score, BLOSUM62 helpers
+│   ├── benchmark.py      ← statistical comparison: MLP vs Transformer vs 3 naive baselines
+│   ├── ablation.py       ← systematic ablation study (11 conditions, all component combos)
+│   ├── pssm.py           ← PSSM encoding: pseudo / PSI-BLAST / runner (50-dim features)
+│   ├── download_data.py  ← download PDB structures (RCSB search or CATH S35 non-redundant)
+│   ├── utils.py          ← MDS, Kabsch, pLDDT, lDDT, TM-score, BLOSUM62/rich encoding
 │   └── visualize.py      ← interactive Plotly HTML visualizations
 │
 ├── data/
@@ -232,10 +239,14 @@ python src/main.py --demo
 ### Download real PDB training data
 
 ```bash
-# Downloads ~80 small, high-quality single-chain proteins from RCSB
+# Option A — CATH S35 non-redundant representatives (recommended for benchmarking)
+# Standard set used in published protein structure prediction papers
+python src/download_data.py --cath-s35 --n 80 --out data/pdbs
+
+# Option B — RCSB search (small X-ray structures, resolution ≤ 2.5 Å)
 python src/download_data.py --n 80 --out data/pdbs
 
-# If the API search fails, use the built-in curated list of known structures
+# Option C — built-in curated fallback list (no internet API needed)
 python src/download_data.py --n 50 --out data/pdbs --use-fallback
 ```
 
@@ -269,15 +280,30 @@ python src/main.py \
     --csv train_history.csv
 ```
 
-### Statistical benchmark (MLP vs Transformer)
+### Statistical benchmark (MLP vs Transformer vs naive baselines)
 
 ```bash
-# Synthetic benchmark with t-test results
+# Synthetic benchmark — compares 5 methods with paired t-tests:
+# Random | Seq-separation | Mean-distance | MLP | Transformer
 python src/benchmark.py --samples 400 --length 40 --epochs 80 --n-test 30
 
 # Benchmark on real PDB data (requires data/pdbs to be populated)
 python src/benchmark.py --train-from-pdb --pdb-dir data/pdbs --epochs 60
 ```
+
+### Component ablation study
+
+Sweeps all combinations of architecture × features × loss × reconstruction to isolate each improvement:
+
+```bash
+# Full ablation (takes ~10–30 min)
+python src/ablation.py --samples 400 --length 40 --epochs 60 --n-test 30
+
+# Quick sanity check (~2 min)
+python src/ablation.py --quick
+```
+
+Results are saved to `results/ablation_<timestamp>.csv` and `.json`.
 
 ### Evaluate a trained model
 
@@ -290,6 +316,10 @@ python src/evaluate.py --model transformer --load-model model_final_real.pt --pd
 
 # On a FASTA file
 python src/evaluate.py --model mlp --load-model model_final.pt --fasta data/example.fasta
+
+# With a PSI-BLAST PSSM file (upgrades encoding to 50-dim for better accuracy)
+python src/evaluate.py --model transformer --load-model model_final_real.pt \
+    --pdb-id 1crn --pssm 1crn.pssm
 ```
 
 ---
@@ -311,11 +341,19 @@ After running the pipeline, open any `.html` file in your browser:
 
 ## Ideas to extend
 
-- **PSSM from PSI-BLAST** — run 3 iterations of PSI-BLAST against UniRef50 to build per-position profiles (the single biggest improvement possible)
-- **Binned distogram** — classify distances into 64 bins (like real AlphaFold) instead of direct regression for better-calibrated confidence
-- **Evoformer-lite** — add pair-bias attention: update pair representations directly instead of just per-residue representations
+**Already implemented:**
+- ✅ PSSM encoding (`src/pssm.py`) — pseudo-PSSM (no tools) and real PSI-BLAST parser
+- ✅ CATH S35 downloader (`--cath-s35` flag) — standard non-redundant benchmark set
+- ✅ Systematic ablation study (`src/ablation.py`) — 11 conditions, isolates each component
+- ✅ Naive baselines in `benchmark.py` — random, seq-separation, mean-distance
+- ✅ Gradient MDS — warm-start + Adam + Huber, replaces closed-form MDS
+- ✅ Combined MSE + contact BCE loss with AdamW + cosine annealing
+
+**Next steps (not yet implemented):**
+- **Binned distogram** — classify distances into 64 bins (like real AlphaFold) instead of direct regression; better-calibrated confidence and sharper contacts
+- **Full MSA via PSI-BLAST** — run `src/pssm.py` with `run_psiblast()` against UniRef50; the single largest remaining improvement
+- **Evoformer-lite** — replace the per-residue Transformer with a pair-bias Transformer that updates pair representations directly
 - **End-to-end training** — backpropagate through the structure module with a differentiable lDDT loss
-- **Larger dataset** — train on CATH / SCOPe domain libraries for realistic benchmarking
 
 See [`report/report.md`](report/report.md) for a full paper-style write-up of the methodology, results, and discussion.
 We now persist training and evaluation outputs in a dedicated path to make reproducibility easy.
