@@ -70,11 +70,24 @@ It takes a raw amino-acid sequence and:
 
 Two model variants are available, both predicting the symmetric distance matrix **D[i,j]**:
 
+### Input features (48-dim per residue)
+
+Instead of a simple 20-dim one-hot, every residue is encoded as a **48-dimensional vector**:
+
+```
+One-hot      (20) — residue identity
+BLOSUM62     (20) — substitution log-odds row (evolutionary context)
+Physicochemical (8) — hydrophobicity, charge, polarity, volume,
+                       aromaticity, helix/sheet/coil propensity
+```
+
+This gives the model evolutionary and biophysical context without requiring a full MSA.
+
 ### MLP (baseline)
 
 ```
-Input  (L × 20)  ──flatten──►  Linear(L·20 → 1024)  ──ReLU──►
-                                Linear(1024 → 512)   ──ReLU──►
+Input  (L × 48)  ──flatten──►  Linear(L·48 → 1024)  ──LayerNorm──ReLU──Dropout
+                                Linear(1024 → 512)   ──LayerNorm──ReLU──Dropout
                                 Linear(512 → L²)
                                 reshape → (L, L)  →  symmetrize  →  ReLU + ε
 ```
@@ -82,18 +95,28 @@ Input  (L × 20)  ──flatten──►  Linear(L·20 → 1024)  ──ReLU─�
 ### Transformer (recommended)
 
 ```
-Input  (B, L, 20)
+Input  (B, L, 48)
    │
-   ▼  Linear projection  →  (B, L, 256)  + positional embedding
+   ▼  Linear projection  →  (B, L, 256)  + learnable positional embedding
    │
-   ▼  TransformerEncoder  (2 layers, 4 heads, GELU, dropout 0.1)
+   ▼  TransformerEncoder  (3 layers, 4 heads, GELU, pre-LN, dropout 0.1)
    │
    ▼  Outer-product pair features  →  (B, L, L, 512)
    │
-   ▼  Pair MLP  →  (B, L, L, 1)  →  squeeze  →  symmetrize  →  ReLU + ε
+   ▼  Pair MLP (3 layers, GELU)  →  (B, L, L, 1)  →  symmetrize  →  ReLU + ε
 ```
 
-The Transformer uses **per-residue attention** so each position can see the whole sequence before predicting pairwise distances — this gives better long-range contact predictions than the flat MLP.
+### Training objective
+
+Combined loss: **MSE + 0.5 × Contact BCE**
+
+$$\mathcal{L} = \mathcal{L}_{\text{MSE}} + 0.5 \cdot \mathcal{L}_{\text{contact BCE}}$$
+
+The contact BCE loss provides explicit signal for predicting which residues are within 8 Å — sparse in MSE but critical for function. Optimizer: **AdamW** + **cosine annealing** LR + gradient clipping.
+
+### Structure reconstruction
+
+Coordinates are recovered from the predicted distance matrix using **gradient-based metric optimisation** (warm-started from classical MDS, refined with Adam + Huber loss for 500 iterations), which is more robust to noisy predicted distances than closed-form MDS.
 
 ---
 
@@ -136,24 +159,28 @@ Loss
 ```
 Scarfold/
 ├── src/
-│   ├── main.py          ← unified entry point (train + evaluate + demo)
-│   ├── model.py         ← MLP & Transformer distance predictors (PyTorch)
-│   ├── train.py         ← training loop with checkpointing & CSV logging
-│   ├── evaluate.py      ← evaluation script, saves JSON results
-│   ├── utils.py         ← MDS, Kabsch, pLDDT, lDDT, TM-score helpers
-│   └── visualize.py     ← interactive Plotly HTML visualizations
+│   ├── main.py           ← unified entry point (train + evaluate + demo)
+│   ├── model.py          ← MLP & Transformer distance predictors (PyTorch)
+│   ├── train.py          ← training loop with checkpointing & CSV logging
+│   ├── evaluate.py       ← evaluation script, saves JSON results
+│   ├── benchmark.py      ← statistical MLP vs Transformer comparison (t-test)
+│   ├── download_data.py  ← download real PDB structures for training
+│   ├── utils.py          ← MDS, Kabsch, pLDDT, lDDT, TM-score, BLOSUM62 helpers
+│   └── visualize.py      ← interactive Plotly HTML visualizations
 │
 ├── data/
-│   └── pdbs/            ← place .pdb files here for real-structure training
+│   └── pdbs/             ← place .pdb files here (or use download_data.py)
 │
-├── checkpoints/         ← saved model checkpoints per epoch
-├── results/             ← evaluation JSON outputs
+├── checkpoints/          ← saved model checkpoints per epoch
+├── results/              ← evaluation JSON outputs
+├── report/
+│   └── report.md         ← 4-page paper-style write-up
 │
-├── model_final.pt       ← trained model (synthetic data)
-├── model_final_real.pt  ← trained model (real PDB data)
+├── model_final.pt        ← trained model (synthetic data)
+├── model_final_real.pt   ← trained model (real PDB data)
 │
-├── train_history.csv         ← epoch / train_loss / val_loss (synthetic)
-├── train_history_real.csv    ← epoch / train_loss / val_loss (real PDB)
+├── train_history.csv          ← epoch / train_loss / val_loss (synthetic)
+├── train_history_real.csv     ← epoch / train_loss / val_loss (real PDB)
 │
 ├── out_pred_vs_native.html        ← 3-D predicted vs native overlay
 ├── out_pred_struct_colored.html   ← 3-D structure colored by pLDDT
@@ -188,7 +215,7 @@ source .venv/bin/activate
 pip install -r requirements.txt
 ```
 
-`requirements.txt` installs: `numpy`, `torch`, `plotly`, `biopython`
+`requirements.txt` installs: `numpy`, `torch`, `plotly`, `biopython`, `scipy`
 
 ---
 
@@ -202,16 +229,25 @@ All commands are run from the **project root**.
 python src/main.py --demo
 ```
 
+### Download real PDB training data
+
+```bash
+# Downloads ~80 small, high-quality single-chain proteins from RCSB
+python src/download_data.py --n 80 --out data/pdbs
+
+# If the API search fails, use the built-in curated list of known structures
+python src/download_data.py --n 50 --out data/pdbs --use-fallback
+```
+
 ### Train on real PDB files
 
 ```bash
-# Place .pdb files in data/pdbs/, then:
 python src/train.py \
     --train-from-pdb \
     --pdb-dir data/pdbs \
     --chain A \
     --model transformer \
-    --epochs 40 \
+    --epochs 60 \
     --lr 5e-4 \
     --checkpoint-dir checkpoints \
     --save-path model_final_real.pt \
@@ -233,11 +269,21 @@ python src/main.py \
     --csv train_history.csv
 ```
 
+### Statistical benchmark (MLP vs Transformer)
+
+```bash
+# Synthetic benchmark with t-test results
+python src/benchmark.py --samples 400 --length 40 --epochs 80 --n-test 30
+
+# Benchmark on real PDB data (requires data/pdbs to be populated)
+python src/benchmark.py --train-from-pdb --pdb-dir data/pdbs --epochs 60
+```
+
 ### Evaluate a trained model
 
 ```bash
 # On a PDB ID (auto-download)
-python src/evaluate.py --model transformer --load-model model_final_real.pt --pdb-id 1a3n --chain A
+python src/evaluate.py --model transformer --load-model model_final_real.pt --pdb-id 1crn --chain A
 
 # On a local PDB file
 python src/evaluate.py --model transformer --load-model model_final_real.pt --pdb data/my.pdb --chain A
@@ -245,19 +291,6 @@ python src/evaluate.py --model transformer --load-model model_final_real.pt --pd
 # On a FASTA file
 python src/evaluate.py --model mlp --load-model model_final.pt --fasta data/example.fasta
 ```
-
-### Train + evaluate in one command
-
-```bash
-python src/main.py \
-    --evaluate \
-    --model transformer \
-    --load-model model_final_real.pt \
-    --pdb-id 1a3n \
-    --chain A
-```
-
-> **Tip:** `model_final.pt` auto-detects its saved sequence length and truncates inputs to match — no manual length flag needed.
 
 ---
 
@@ -278,12 +311,13 @@ After running the pipeline, open any `.html` file in your browser:
 
 ## Ideas to extend
 
-- **Better sequence features** — use ESM-2 embeddings instead of one-hot
-- **Binned distogram** — classify distances into bins (like real AlphaFold) instead of direct regression
-- **Larger Transformer** — add more layers, heads, and pair bias (EvoFormer-lite)
-- **End-to-end structure** — replace MDS with gradient-based coordinate optimization
-- **LDDT loss** — replace MSE with a differentiable lDDT loss for better structural quality
-- **Dataset** — train on CATH / SCOPe domain libraries for realistic benchmarking
+- **PSSM from PSI-BLAST** — run 3 iterations of PSI-BLAST against UniRef50 to build per-position profiles (the single biggest improvement possible)
+- **Binned distogram** — classify distances into 64 bins (like real AlphaFold) instead of direct regression for better-calibrated confidence
+- **Evoformer-lite** — add pair-bias attention: update pair representations directly instead of just per-residue representations
+- **End-to-end training** — backpropagate through the structure module with a differentiable lDDT loss
+- **Larger dataset** — train on CATH / SCOPe domain libraries for realistic benchmarking
+
+See [`report/report.md`](report/report.md) for a full paper-style write-up of the methodology, results, and discussion.
 We now persist training and evaluation outputs in a dedicated path to make reproducibility easy.
 
 - Default checkpoints: `checkpoints/best_model_epoch_{n}.pt`

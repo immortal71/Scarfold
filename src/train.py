@@ -70,7 +70,7 @@ if __name__ == '__main__':
         seqs, dists = utils.sample_pdb_dataset(args.pdb_dir, chain=args.chain,
                                              max_residues=args.max_residues,
                                              min_residues=args.min_residues)
-        onehots = np.stack([utils.one_hot(s.ljust(args.max_residues, 'A')[:args.max_residues]) for s in seqs])
+        onehots = np.stack([utils.rich_encoding(s.ljust(args.max_residues, 'A')[:args.max_residues]) for s in seqs])
         n_train = int(len(seqs) * 0.8)
         train_X, train_Y = onehots[:n_train], dists[:n_train]
         val_X, val_Y = onehots[n_train:], dists[n_train:]
@@ -81,7 +81,7 @@ if __name__ == '__main__':
     else:
         print('Generating synthetic dataset...')
         seqs, dists = utils.make_synthetic_dataset(num=args.samples, L=args.length, seed=42)
-        onehots = np.stack([utils.one_hot(s) for s in seqs])
+        onehots = np.stack([utils.rich_encoding(s) for s in seqs])
         n_train = int(args.samples * 0.8)
         train_X, train_Y = onehots[:n_train], dists[:n_train]
         val_X, val_Y = onehots[n_train:], dists[n_train:]

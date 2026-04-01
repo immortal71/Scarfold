@@ -6,12 +6,104 @@ HYDRO = {
     'A': 1.8,'C':2.5,'D':-3.5,'E':-3.5,'F':2.8,'G':-0.4,'H':-3.2,'I':4.5,'K':-3.9,'L':3.8,'M':1.9,'N':-3.5,'P':-1.6,'Q':-3.5,'R':-4.5,'S':-0.8,'T':-0.7,'V':4.2,'W':-0.9,'Y':-1.3
 }
 
+# ──────────────────────────────────────────────
+# BLOSUM62 substitution matrix (rows = query AA, cols = AA_LIST order)
+# Used to add evolutionary-context features instead of plain one-hot.
+# Source: NCBI BLOSUM62 (normalised to [-1, 1] for numerical stability).
+# ──────────────────────────────────────────────
+_BLOSUM62_RAW = {
+    'A': [ 4,-1,-2,-2, 0,-1,-1, 0,-2,-1,-1,-1,-1,-2,-1, 1, 0,-3,-2, 0],
+    'C': [-1, 9,-3,-4,-2,-3,-3,-1,-3,-1,-1,-3,-3,-2,-3,-1,-1,-2,-2,-1],
+    'D': [-2,-3, 6, 2,-3,-1,-1,-2,-1,-3,-4,-1,-3,-3,-1, 0,-1,-4,-3,-3],
+    'E': [-2,-4, 2, 5,-3,-2, 0,-2, 0,-3,-3, 1,-2,-3,-1, 0,-1,-3,-2,-2],
+    'F': [ 0,-2,-3,-3, 6,-3,-1, 0,-3, 0, 0,-3,-4,-3,-3,-2,-2, 1, 3,-1],
+    'G': [-1,-3,-1,-2,-3, 6,-2,-4,-2,-4,-4,-2,-3,-3,-2, 0,-2,-2,-3,-3],
+    'H': [-1,-3,-1, 0,-1,-2, 8,-3,-1,-3,-3,-1,-2,-1,-2,-1,-2,-2, 2,-3],
+    'I': [ 0,-1,-2,-2, 0,-4,-3, 4,-3, 2, 1,-3,-3,-3,-3,-2,-1,-3,-1, 3],
+    'K': [-2,-3,-1, 0,-3,-2,-1,-3, 5,-2,-2, 1,-1,-1,-1, 0,-1,-3,-2,-2],
+    'L': [-1,-1,-3,-3, 0,-4,-3, 2,-2, 4, 2,-3,-3,-3,-3,-2,-1,-2,-1, 1],
+    'M': [-1,-1,-3,-3, 0,-3,-3, 1,-2, 2, 5,-2,-2, 0,-2,-1,-1,-1,-1, 1],
+    'N': [-1,-3, 1, 0,-3,-2,-1,-3, 1,-3,-2, 6,-2, 0, 0, 1, 0,-4,-2,-3],
+    'P': [-1,-3,-1,-1,-4,-2,-2,-3,-1,-3,-2,-2, 7,-1,-2,-1,-1,-4,-3,-2],
+    'Q': [-1,-3,-1, 1,-4,-2,-1,-3, 1,-3,-2, 0,-1, 5,-1, 0,-1,-2,-1,-2],
+    'R': [-1,-3,-1,-1,-3,-2,-2,-3,-1,-3,-2, 0,-2,-1, 5,-1,-1,-3,-2,-3],
+    'S': [ 1,-1, 0, 0,-2, 0,-1,-2, 0,-2,-1, 1,-1, 0,-1, 4, 1,-3,-2,-2],
+    'T': [ 0,-1,-1,-1,-2,-2,-2,-1,-1,-1,-1, 0,-1,-1,-1, 1, 5,-2,-2, 0],
+    'V': [-3,-2,-4,-3, 1,-2,-2,-3,-3,-2,-1,-4,-4,-2,-3,-3,-2,11, 2,-3],
+    'W': [-2,-2,-3,-2, 3,-3, 2,-1,-2,-1,-1,-2,-3,-1,-2,-2,-2, 2, 7,-1],
+    'Y': [ 0,-1,-3,-2,-1,-3,-3, 3,-2, 1, 1,-3,-2,-2,-3,-2, 0,-3,-1, 4],
+}
+# Build ordered matrix (20×20) and normalise to [-1,1]
+_BL62_MAX = 11.0
+BLOSUM62 = np.array(
+    [_BLOSUM62_RAW[a] for a in AA_LIST], dtype=np.float32
+) / _BL62_MAX  # shape (20, 20)
+
+# ──────────────────────────────────────────────
+# Physicochemical property vectors per amino acid
+# 8 features: hydrophobicity, charge, polarity, volume, aromaticity,
+#             helix_propensity, sheet_propensity, coil_propensity
+# ──────────────────────────────────────────────
+_PHYSCHEM = {
+    # AA: [hydro, charge, polarity, rel_volume, aromatic, helix, sheet, coil]
+    'A': [ 1.8,  0,  8.1, 0.31, 0, 1.42, 0.83, 0.66],
+    'C': [ 2.5,  0,  5.5, 0.55, 0, 0.70, 1.19, 1.19],
+    'D': [-3.5, -1, 13.0, 0.46, 0, 1.01, 0.54, 1.46],
+    'E': [-3.5, -1, 12.3, 0.62, 0, 1.51, 0.37, 1.14],
+    'F': [ 2.8,  0,  5.2, 1.00, 1, 1.13, 1.38, 0.60],
+    'G': [-0.4,  0,  9.0, 0.00, 0, 0.57, 0.75, 1.56],
+    'H': [-3.2,  1, 10.4, 0.87, 1, 1.00, 0.87, 0.95],
+    'I': [ 4.5,  0,  5.2, 0.90, 0, 1.08, 1.60, 0.47],
+    'K': [-3.9,  1, 11.3, 0.93, 0, 1.14, 0.74, 1.01],
+    'L': [ 3.8,  0,  4.9, 0.90, 0, 1.21, 1.30, 0.59],
+    'M': [ 1.9,  0,  5.7, 0.94, 0, 1.45, 1.05, 0.60],
+    'N': [-3.5,  0, 11.6, 0.58, 0, 0.67, 0.89, 1.33],
+    'P': [-1.6,  0,  8.0, 0.55, 0, 0.57, 0.55, 1.52],
+    'Q': [-3.5,  0, 10.5, 0.72, 0, 1.11, 1.10, 0.96],
+    'R': [-4.5,  1, 10.5, 1.19, 0, 0.98, 0.93, 0.95],
+    'S': [-0.8,  0,  9.2, 0.35, 0, 0.77, 0.75, 1.43],
+    'T': [-0.7,  0,  8.6, 0.56, 0, 0.83, 1.19, 0.96],
+    'V': [ 4.2,  0,  5.9, 0.76, 0, 1.06, 1.70, 0.50],
+    'W': [-0.9,  0,  5.4, 1.30, 1, 1.08, 1.37, 0.96],
+    'Y': [-1.3,  0,  6.2, 1.14, 1, 0.69, 1.47, 1.14],
+}
+_PHYSCHEM_MATRIX = np.array(
+    [_PHYSCHEM[a] for a in AA_LIST], dtype=np.float32
+)
+# normalise each column to [0,1]
+_pc_min = _PHYSCHEM_MATRIX.min(0)
+_pc_max = _PHYSCHEM_MATRIX.max(0)
+_PHYSCHEM_MATRIX = (_PHYSCHEM_MATRIX - _pc_min) / (_pc_max - _pc_min + 1e-8)
+
+# total feature dimension per residue when using rich encoding
+RICH_AA_DIM = 20 + 20 + 8  # one_hot + blosum62 + physicochemical = 48
+
 def one_hot(seq):
     L = len(seq)
     mat = np.zeros((L,20),dtype=np.float32)
     for i,a in enumerate(seq):
         mat[i,AA_TO_IDX.get(a,'A')] = 1.0
     return mat
+
+
+def rich_encoding(seq):
+    """Return a (L, 48) feature matrix: one-hot(20) + BLOSUM62(20) + physicochemical(8).
+
+    This gives the model evolutionary context beyond raw identity, which is the
+    largest single improvement short of running a full MSA.
+    """
+    L = len(seq)
+    oh = np.zeros((L, 20), dtype=np.float32)
+    bl = np.zeros((L, 20), dtype=np.float32)
+    pc = np.zeros((L,  8), dtype=np.float32)
+    for i, a in enumerate(seq):
+        idx = AA_TO_IDX.get(a, 0)
+        oh[i, idx] = 1.0
+        bl[i] = BLOSUM62[idx]
+        pc[i] = _PHYSCHEM_MATRIX[idx]
+    return np.concatenate([oh, bl, pc], axis=1)  # (L, 48)
+
+
 
 def synthetic_native_coords(seq, seed=0):
     """Generate synthetic 3D coords biased by hydrophobicity for demonstration."""
@@ -57,6 +149,34 @@ def classical_mds(dist_mat, dim=3):
     w = np.sqrt(np.clip(evals, 0, None))
     coords = evecs[:,:dim] * w[:dim]
     return coords
+
+
+def gradient_mds(dist_mat, dim=3, n_iter=500, lr=0.05):
+    """Gradient-based coordinate optimisation: minimise distance violation loss.
+
+    Starts from classical MDS, then refines with Adam — this is differentiable
+    and produces tighter reconstructions than closed-form MDS on noisy matrices.
+    """
+    import torch
+    target = torch.tensor(dist_mat, dtype=torch.float32)
+    # warm-start with classical MDS
+    init = classical_mds(dist_mat, dim=dim)
+    coords = torch.tensor(init, dtype=torch.float32, requires_grad=True)
+    opt = torch.optim.Adam([coords], lr=lr)
+    scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(opt, T_max=n_iter, eta_min=lr * 0.01)
+    for _ in range(n_iter):
+        # pairwise distances from current coords
+        diff = coords.unsqueeze(0) - coords.unsqueeze(1)       # (L,L,3)
+        pred_d = torch.sqrt((diff ** 2).sum(-1) + 1e-8)        # (L,L)
+        # smooth L1 (Huber) distance violation loss — less sensitive to outliers
+        loss = torch.nn.functional.huber_loss(pred_d, target, delta=2.0)
+        opt.zero_grad()
+        loss.backward()
+        opt.step()
+        scheduler.step()
+    return coords.detach().numpy()
+
+
 
 def kabsch_alignment(P, Q):
     """Returns rotation matrix and translation vector to align P to Q."""

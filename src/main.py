@@ -18,8 +18,8 @@ def demo_run(num_samples=250, L=40, seed=2, model_type='mlp', load_model_path=No
     print('Generating synthetic dataset...')
     seqs, dists = utils.make_synthetic_dataset(num=num_samples, L=L, seed=seed)
 
-    # model-ready one-hot
-    onehots = np.stack([utils.one_hot(s) for s in seqs])
+    # rich encoding: one-hot + BLOSUM62 + physicochemical (48 features per residue)
+    onehots = np.stack([utils.rich_encoding(s) for s in seqs])
 
     # train-test split
     n_train = min(200, num_samples - 5)
@@ -47,12 +47,11 @@ def demo_run(num_samples=250, L=40, seed=2, model_type='mlp', load_model_path=No
     print('Predicting distances for held-out sequence...')
     pred_dist = md.predict(model, test_onehot)
 
-    visualizer_info = []
-    # enforce symmetry and positive distances (small noise adjustment)
+    # enforce symmetry and positive distances
     pred_dist = 0.5 * (pred_dist + pred_dist.T)
 
-    print('Computing predicted coordinates with classic MDS...')
-    pred_coords = utils.classical_mds(pred_dist, dim=3)
+    print('Computing predicted coordinates with gradient-based optimisation...')
+    pred_coords = utils.gradient_mds(pred_dist, dim=3)
 
     print('Computing alignment and RMSD')
     rmsd_aligned, aligned_pred = utils.rmsd_kabsch(pred_coords, true_coords[:pred_coords.shape[0]])
@@ -103,7 +102,7 @@ def demo_run_pdb(pdb_path, chain='A', num_samples=250, L=80, seed=2, model_type=
 
     print('Generating synthetic training dataset (N={} L={} seq)'.format(num_samples, len(seq)))
     seqs, dists = utils.make_synthetic_dataset(num=num_samples, L=len(seq), seed=seed)
-    onehots = np.stack([utils.one_hot(s) for s in seqs])
+    onehots = np.stack([utils.rich_encoding(s) for s in seqs])
     train_X, train_Y = onehots[:max(1, num_samples-30)], dists[:max(1, num_samples-30)]
 
     print('Training predictor on synthetic data...')
@@ -123,11 +122,11 @@ def demo_run_pdb(pdb_path, chain='A', num_samples=250, L=80, seed=2, model_type=
         true_dist = utils.coords_to_distances(true_coords)
 
     print('Predicting on PDB sequence...')
-    test_onehot = utils.one_hot(seq)
+    test_onehot = utils.rich_encoding(seq)
     pred_dist = md.predict(model, test_onehot)
     pred_dist = 0.5 * (pred_dist + pred_dist.T)
 
-    pred_coords = utils.classical_mds(pred_dist, dim=3)
+    pred_coords = utils.gradient_mds(pred_dist, dim=3)
     rmsd_aligned, aligned_pred = utils.rmsd_kabsch(pred_coords, true_coords[:pred_coords.shape[0]])
     rmsd_unaligned = np.sqrt(np.mean((pred_coords - true_coords[:pred_coords.shape[0]])**2))
 
@@ -162,7 +161,7 @@ def demo_run_fasta(fasta_path, num_samples=250, L=40, seed=2, model_type='mlp', 
 
     print('Generating synthetic training data...')
     seqs, dists = utils.make_synthetic_dataset(num=num_samples, L=len(seq), seed=seed)
-    onehots = np.stack([utils.one_hot(s) for s in seqs])
+    onehots = np.stack([utils.rich_encoding(s) for s in seqs])
     train_X, train_Y = onehots[:max(1, num_samples-30)], dists[:max(1, num_samples-30)]
 
     print('Initializing model...')
@@ -181,11 +180,11 @@ def demo_run_fasta(fasta_path, num_samples=250, L=40, seed=2, model_type='mlp', 
         true_coords = true_coords[:model.seq_len]
         true_dist = utils.coords_to_distances(true_coords)
 
-    test_onehot = utils.one_hot(seq)
+    test_onehot = utils.rich_encoding(seq)
     pred_dist = md.predict(model, test_onehot)
     pred_dist = 0.5 * (pred_dist + pred_dist.T)
 
-    pred_coords = utils.classical_mds(pred_dist, dim=3)
+    pred_coords = utils.gradient_mds(pred_dist, dim=3)
     rmsd_aligned, aligned_pred = utils.rmsd_kabsch(pred_coords, true_coords[:pred_coords.shape[0]])
     rmsd_unaligned = np.sqrt(np.mean((pred_coords - true_coords[:pred_coords.shape[0]])**2))
 
