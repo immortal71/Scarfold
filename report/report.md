@@ -59,29 +59,37 @@ Three PSSM modes are supported:
 
 ### 2.2 Model Architectures
 
-**MLP baseline** — flattens the L×48 encoding and passes it through two hidden layers (1024 → 512 → L²) with LayerNorm and Dropout. Output is reshaped into a symmetric L×L distance matrix.
+**MLP baseline** — flattens the L×48 encoding through two hidden layers (1024 → 512, LayerNorm + GELU). Output is reshaped into (L, L, 65) distogram logits, symmetrised, then converted to expected distances via softmax + bin-centre weighted average.
 
-**Transformer** — projects each residue to a 256-dimensional embedding, adds learnable positional embeddings, processes through 3 pre-LN Transformer encoder layers (4 heads, GELU activations), then computes pair representations via outer concatenation and a 3-layer pair MLP. This architecture captures dependencies between non-adjacent residues — crucial for beta-sheet contacts.
+**Transformer — Evoformer-lite** — the core architecture, implementing one block of AlphaFold2's Evoformer concept:
+
+1. Project each residue to a 256-dim embedding + learnable positional embedding.
+2. Build an initial **pair representation** (L×L×64) via outer sum of projected residues + relative-position embedding (clipped to ±32).
+3. Process through 4 **Evoformer-lite layers**, each with:
+   - **Pair-biased attention**: pair(i,j) features are projected to per-head attention biases, conditioning the attention pattern on pair state.
+   - **Pair track update**: pair representations updated with outer-product mean of residue embeddings at each layer.
+   - Pre-LN feedforward on the residue track.
+4. **Distogram head**: (pair_dim → 65 logits) per pair, symmetrised.
 
 ### 2.3 Training Objective
 
-We train with a **combined loss**:
+We train with **distogram cross-entropy + contact BCE**:
 
-$$\mathcal{L} = \mathcal{L}_{\text{MSE}} + \lambda \cdot \mathcal{L}_{\text{contact}}$$
+$$\mathcal{L} = \mathcal{L}_{\text{distogram CE}} + \lambda \cdot \mathcal{L}_{\text{contact BCE}}, \quad \lambda = 0.5$$
 
-where $\mathcal{L}_{\text{contact}}$ is a binary cross-entropy loss on contact predictions (distance < 8 Å), with $\lambda = 0.5$. This provides explicit gradient signal for short-range contacts, which are sparse in the distance matrix and underweighted by MSE alone.
+**Distogram cross-entropy**: classifies each pairwise distance into one of 64 bins over 2–22 Å plus one "too far" bin (65 total). This is the same objective used in AlphaFold — binned classification provides sharper gradients and better-calibrated confidence than MSE regression.
 
-We use **AdamW** with weight decay 1e-4 and **cosine annealing** learning rate schedule, with gradient clipping at norm 1.0.
+**Contact BCE**: binary contact classification (< 8 Å) on expected distances from distogram softmax. Mini-batch training (batch_size=16) with **AdamW** (weight_decay=1e-4), **cosine annealing**, gradient clipping 1.0.
 
 ### 2.4 Structure Reconstruction
 
-Rather than classical MDS (closed-form, sensitive to noisy eigenvalues), we use **gradient-based coordinate optimisation**:
+Rather than classical MDS, we use **gradient-based coordinate optimisation** with an **lDDT-proxy regulariser**:
 
 1. Initialise 3-D coordinates with classical MDS as a warm start.
-2. Minimise Huber distance-violation loss: $\mathcal{L} = \frac{1}{L^2}\sum_{i,j} \text{Huber}(\hat{d}_{ij} - d_{ij}, \delta=2)$
+2. Minimise: $\mathcal{L} = \text{Huber}(\hat{d}, d, \delta=2) - 0.1 \cdot \text{sigmoid}(2 - |\hat{d} - d|)$
+   — the second term rewards pairs where the distance error is below 2 Å (the strictest lDDT threshold).
 3. Optimise with Adam + cosine annealing for 500 iterations.
 
-The Huber loss is less sensitive to outliers than MSE, tolerating the few large distance errors that arise from poor predictions.
 
 ### 2.5 Evaluation Metrics
 

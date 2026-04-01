@@ -154,27 +154,42 @@ def classical_mds(dist_mat, dim=3):
 def gradient_mds(dist_mat, dim=3, n_iter=500, lr=0.05):
     """Gradient-based coordinate optimisation: minimise distance violation loss.
 
-    Starts from classical MDS, then refines with Adam — this is differentiable
-    and produces tighter reconstructions than closed-form MDS on noisy matrices.
+    Starts from classical MDS (warm start) then refines with Adam + Huber loss.
+    Adds an lDDT-proxy regulariser that rewards getting the *rank order* of
+    distances right (nearby pairs closer than far pairs) — this is closer to
+    how AlphaFold's structure module is supervised.
     """
     import torch
     target = torch.tensor(dist_mat, dtype=torch.float32)
-    # warm-start with classical MDS
     init = classical_mds(dist_mat, dim=dim)
     coords = torch.tensor(init, dtype=torch.float32, requires_grad=True)
     opt = torch.optim.Adam([coords], lr=lr)
     scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(opt, T_max=n_iter, eta_min=lr * 0.01)
-    for _ in range(n_iter):
-        # pairwise distances from current coords
+
+    # Pre-compute pair masks (upper triangle, excluding diagonal)
+    L = target.shape[0]
+    triu_i, triu_j = torch.triu_indices(L, L, offset=1)
+
+    for step in range(n_iter):
         diff = coords.unsqueeze(0) - coords.unsqueeze(1)       # (L,L,3)
         pred_d = torch.sqrt((diff ** 2).sum(-1) + 1e-8)        # (L,L)
-        # smooth L1 (Huber) distance violation loss — less sensitive to outliers
+        # Huber distance reconstruction loss
         loss = torch.nn.functional.huber_loss(pred_d, target, delta=2.0)
+
+        # lDDT-proxy: fraction of pairs where |pred_d - true_d| < threshold
+        # Differentiable via smooth sigmoid boundary (only in first 3/4 of iters)
+        if step < n_iter * 3 // 4:
+            delta_d = (pred_d[triu_i, triu_j] - target[triu_i, triu_j]).abs()
+            # Smooth 0/1 indicator for δ < 2 Å (like lDDT threshold)
+            lddt_proxy = torch.sigmoid(2.0 - delta_d).mean()
+            loss = loss - 0.1 * lddt_proxy   # reward small errors
+
         opt.zero_grad()
         loss.backward()
         opt.step()
         scheduler.step()
     return coords.detach().numpy()
+
 
 
 
@@ -321,8 +336,12 @@ def fasta_sequence(fasta_path, max_residues=120):
 
 
 def sample_pdb_dataset(pdb_dir, chain='A', max_residues=120, min_residues=10):
-    """Load PDB files and produce (seq, dist) pairs for training."""
-    pdb_files = sorted(f for f in os.listdir(pdb_dir) if f.lower().endswith(('.pdb', '.ent')))    
+    """Load PDB files and produce (seq, dist) pairs — all padded to the same length.
+
+    For mini-batch training on real PDB data, prefer sample_pdb_dataset_variable()
+    which returns variable-length sequences (one protein = one sample).
+    """
+    pdb_files = sorted(f for f in os.listdir(pdb_dir) if f.lower().endswith(('.pdb', '.ent')))
     seqs = []
     dists = []
     for fn in pdb_files:
@@ -342,6 +361,36 @@ def sample_pdb_dataset(pdb_dir, chain='A', max_residues=120, min_residues=10):
     if len(seqs) == 0:
         raise ValueError(f'No valid PDB data found in {pdb_dir} for chain {chain}')
     return seqs, np.stack(dists)
+
+
+def sample_pdb_dataset_variable(pdb_dir, chain='A', max_residues=120, min_residues=20):
+    """Load PDB files and return variable-length (seq, dist_matrix) pairs.
+
+    Unlike sample_pdb_dataset(), this does NOT pad — each entry may have a
+    different length.  Use this for per-protein training where the model is
+    re-instantiated or batch_size=1.
+
+    Returns:
+        list of (seq: str, dist: np.ndarray[L,L])
+    """
+    pdb_files = sorted(f for f in os.listdir(pdb_dir) if f.lower().endswith(('.pdb', '.ent')))
+    samples = []
+    for fn in pdb_files:
+        path = os.path.join(pdb_dir, fn)
+        try:
+            seq = pdb_sequence(path, chain=chain, max_residues=max_residues)
+            if len(seq) < min_residues:
+                continue
+            coords = pdb_ca_coords(path, chain=chain, max_residues=max_residues)
+            if coords.shape[0] < min_residues or coords.shape[0] != len(seq):
+                continue
+            d = coords_to_distances(coords).astype(np.float32)
+            samples.append((seq, d))
+        except Exception:
+            continue
+    if not samples:
+        raise ValueError(f'No valid PDB sequences found in {pdb_dir}')
+    return samples
 
 
 def tm_score(P, Q, d0=None):

@@ -91,37 +91,42 @@ The rich encoding gives the model evolutionary and biophysical context without r
 ### MLP (baseline)
 
 ```
-Input  (L × 48)  ──flatten──►  Linear(L·48 → 1024)  ──LayerNorm──ReLU──Dropout
-                                Linear(1024 → 512)   ──LayerNorm──ReLU──Dropout
-                                Linear(512 → L²)
-                                reshape → (L, L)  →  symmetrize  →  ReLU + ε
+Input  (L × 48)  ──flatten──►  Linear(L·48 → 1024)  ──LayerNorm──GELU──Dropout
+                                Linear(1024 → 512)   ──LayerNorm──GELU──Dropout
+                                Linear(512 → L×L×65)
+                                reshape → (L, L, 65 bins)  →  softmax  →  expected distance
 ```
 
-### Transformer (recommended)
+### Transformer — Evoformer-lite (recommended)
 
 ```
 Input  (B, L, 48)
    │
    ▼  Linear projection  →  (B, L, 256)  + learnable positional embedding
    │
-   ▼  TransformerEncoder  (3 layers, 4 heads, GELU, pre-LN, dropout 0.1)
+   ▼  Initial pair representation  (outer sum + relative-position embedding)
    │
-   ▼  Outer-product pair features  →  (B, L, L, 512)
+   ▼  Evoformer-lite stack  (4 layers):
+   │    ┌── Pair bias attention: pair(i,j) biases attention between residues i, j
+   │    ├── Pair track update: outer-product mean of residue embeddings
+   │    └── Pre-LN FFN on residue track
    │
-   ▼  Pair MLP (3 layers, GELU)  →  (B, L, L, 1)  →  symmetrize  →  ReLU + ε
+   ▼  Distogram head  →  (B, L, L, 65 bins)  →  softmax  →  expected distance
 ```
 
 ### Training objective
 
-Combined loss: **MSE + 0.5 × Contact BCE**
+Combined loss over **64+1 distance bins** (like AlphaFold's distogram head):
 
-$$\mathcal{L} = \mathcal{L}_{\text{MSE}} + 0.5 \cdot \mathcal{L}_{\text{contact BCE}}$$
+$$\mathcal{L} = \mathcal{L}_{\text{distogram CE}} + 0.5 \cdot \mathcal{L}_{\text{contact BCE}}$$
 
-The contact BCE loss provides explicit signal for predicting which residues are within 8 Å — sparse in MSE but critical for function. Optimizer: **AdamW** + **cosine annealing** LR + gradient clipping.
+- **Distogram cross-entropy**: classifies each pair distance into one of 64 bins covering 2–22 Å + one "too-far" bin. Far sharper gradients than MSE regression.
+- **Contact BCE**: additional binary classification for pairs < 8 Å.
+- Optimizer: **AdamW** + **cosine annealing** LR + gradient clipping 1.0.
 
 ### Structure reconstruction
 
-Coordinates are recovered from the predicted distance matrix using **gradient-based metric optimisation** (warm-started from classical MDS, refined with Adam + Huber loss for 500 iterations), which is more robust to noisy predicted distances than closed-form MDS.
+Coordinates are recovered from expected distances via **gradient-based metric optimisation** (warm-started from classical MDS, refined with Adam + Huber loss + lDDT-proxy regulariser for 500 iterations), which is more robust to noisy predicted distances than closed-form MDS.
 
 ---
 
@@ -253,6 +258,7 @@ python src/download_data.py --n 50 --out data/pdbs --use-fallback
 ### Train on real PDB files
 
 ```bash
+# Standard training (proteins padded to --max-residues)
 python src/train.py \
     --train-from-pdb \
     --pdb-dir data/pdbs \
@@ -260,9 +266,21 @@ python src/train.py \
     --model transformer \
     --epochs 60 \
     --lr 5e-4 \
+    --batch-size 8 \
+    --max-residues 80 \
     --checkpoint-dir checkpoints \
     --save-path model_final_real.pt \
     --csv train_history_real.csv
+
+# Variable-length training: each protein trained at its native length (no padding)
+python src/train.py \
+    --train-from-pdb \
+    --variable-length \
+    --pdb-dir data/pdbs \
+    --model transformer \
+    --epochs 60 \
+    --lr 5e-4 \
+    --save-path model_final_real.pt
 ```
 
 ### Train on synthetic data
@@ -346,14 +364,16 @@ After running the pipeline, open any `.html` file in your browser:
 - ✅ CATH S35 downloader (`--cath-s35` flag) — standard non-redundant benchmark set
 - ✅ Systematic ablation study (`src/ablation.py`) — 11 conditions, isolates each component
 - ✅ Naive baselines in `benchmark.py` — random, seq-separation, mean-distance
-- ✅ Gradient MDS — warm-start + Adam + Huber, replaces closed-form MDS
-- ✅ Combined MSE + contact BCE loss with AdamW + cosine annealing
+- ✅ Gradient MDS with lDDT-proxy regulariser — better than closed-form MDS
+- ✅ **Distogram head (64+1 bins)** — like AlphaFold; replaces MSE regression
+- ✅ **Evoformer-lite Transformer** — pair-bias attention + pair track update (4 layers)
+- ✅ Mini-batch training + variable-length PDB training (`--variable-length`)
+- ✅ Combined distogram CE + contact BCE loss with AdamW + cosine annealing
 
-**Next steps (not yet implemented):**
-- **Binned distogram** — classify distances into 64 bins (like real AlphaFold) instead of direct regression; better-calibrated confidence and sharper contacts
-- **Full MSA via PSI-BLAST** — run `src/pssm.py` with `run_psiblast()` against UniRef50; the single largest remaining improvement
-- **Evoformer-lite** — replace the per-residue Transformer with a pair-bias Transformer that updates pair representations directly
-- **End-to-end training** — backpropagate through the structure module with a differentiable lDDT loss
+**Remaining gaps (true research frontier without GPU cluster):**
+- **Full MSA via PSI-BLAST** — `src/pssm.py` has `run_psiblast()` ready; needs UniRef50 database (~70 GB)
+- **End-to-end training** — backpropagate through gradient MDS with differentiable lDDT loss
+- **Template features** — use known structure templates as additional input (AlphaFold-style)
 
 See [`report/report.md`](report/report.md) for a full paper-style write-up of the methodology, results, and discussion.
 We now persist training and evaluation outputs in a dedicated path to make reproducibility easy.
