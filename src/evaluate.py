@@ -12,28 +12,47 @@ if REPO_ROOT not in sys.path:
 
 from src import utils
 from src import model as md
+try:
+    from src import pssm as pssm_utils
+    _HAS_PSSM = True
+except ImportError:
+    _HAS_PSSM = False
 
 
-def evaluate_model(model, seq, true_coords):
+def evaluate_model(model, seq, true_coords, pssm_path=None):
+    """Evaluate model on one sequence.  Optionally supply a PSI-BLAST PSSM file."""
     true_dist = utils.coords_to_distances(true_coords)
-    pred_dist = md.predict(model, utils.one_hot(seq))
+
+    # ── build encoding ────────────────────────────────────────────────────────
+    if pssm_path and _HAS_PSSM:
+        pssm_matrix = pssm_utils.parse_psiblast_pssm(pssm_path)
+        enc = pssm_utils.encoding_with_pssm(seq, pssm=pssm_matrix)
+    else:
+        enc = utils.rich_encoding(seq)
+
+    pred_dist = md.predict(model, enc)
     pred_dist = 0.5 * (pred_dist + pred_dist.T)
 
-    pred_coords = utils.classical_mds(pred_dist, dim=3)
-    rmsd_aligned, aligned_pred = utils.rmsd_kabsch(pred_coords, true_coords[:pred_coords.shape[0]])
-    rmsd_unaligned = np.sqrt(np.mean((pred_coords - true_coords[:pred_coords.shape[0]])**2))
-    plddt = md.pseudo_plddt(pred_dist, true_dist).mean()
-    local_lddt = utils.local_lddt(pred_dist, true_dist).mean()
-    cmap = md.contact_map_score(pred_dist, true_dist)
-    tm = utils.tm_score(aligned_pred, true_coords[:aligned_pred.shape[0]])
+    # ── reconstruct coordinates with gradient MDS ─────────────────────────────
+    pred_coords = utils.gradient_mds(pred_dist, dim=3, n_iter=300)
+    N = min(pred_coords.shape[0], true_coords.shape[0])
+    rmsd_aligned, aligned_pred = utils.rmsd_kabsch(pred_coords[:N], true_coords[:N])
+    rmsd_unaligned = float(np.sqrt(np.mean((pred_coords[:N] - true_coords[:N]) ** 2)))
+    plddt = float(md.pseudo_plddt(
+        pred_dist, true_dist[:pred_dist.shape[0], :pred_dist.shape[1]]).mean())
+    local_ldt = float(utils.local_lddt(
+        pred_dist, true_dist[:pred_dist.shape[0], :pred_dist.shape[1]]).mean())
+    cmap = md.contact_map_score(
+        pred_dist, true_dist[:pred_dist.shape[0], :pred_dist.shape[1]])
+    tm = utils.tm_score(aligned_pred, true_coords[:N])
 
     return {
-        'rmsd_unaligned': float(rmsd_unaligned),
+        'rmsd_unaligned': rmsd_unaligned,
         'rmsd_aligned': float(rmsd_aligned),
-        'pLDDT': float(plddt),
-        'local_lDDT': float(local_lddt),
-        'contact_f1': cmap['f1'],
-        'tm_proxy': tm,
+        'pLDDT': plddt,
+        'local_lDDT': local_ldt,
+        'contact_f1': float(cmap['f1']),
+        'tm_proxy': float(tm),
     }
 
 
@@ -58,6 +77,7 @@ if __name__ == '__main__':
     p.add_argument('--fasta', default='')
     p.add_argument('--chain', default='A')
     p.add_argument('--max-residues', type=int, default=120)
+    p.add_argument('--pssm', default='', help='Path to PSI-BLAST ASCII PSSM file (optional; upgrades encoding to 50-dim)')
     p.add_argument('--result-dir', default='results', help='Directory to save evaluation json')
     p.add_argument('--result-file', default=None, help='Optional filename for evaluation JSON output')
     args = p.parse_args()
@@ -80,7 +100,11 @@ if __name__ == '__main__':
         seq = seq[:model.seq_len]
         coords = coords[:model.seq_len]
 
-    metrics = evaluate_model(model, seq, coords)
+    pssm_path = args.pssm if args.pssm else None
+    if pssm_path and not _HAS_PSSM:
+        print('Warning: --pssm specified but src/pssm.py not found; falling back to rich_encoding.')
+        pssm_path = None
+    metrics = evaluate_model(model, seq, coords, pssm_path=pssm_path)
 
     print('Evaluation metrics:')
     for k,v in metrics.items():

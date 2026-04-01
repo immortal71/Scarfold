@@ -167,6 +167,55 @@ def download_pdb(pdb_id, output_dir):
         return None, str(e)
 
 
+def _download_cath_s35(n, output_dir, min_residues=40, max_residues=120):
+    """Download up to *n* CATH S35 non-redundant domain structures.
+
+    Strategy:
+      1. Fetch the CATH v4.3 S35 representative domain list (text file).
+      2. Parse domain IDs (format 1a0pA00 → PDB=1a0p, chain=A).
+      3. Download the corresponding PDB files from RCSB.
+    Only chains with residue count in [min_residues, max_residues] are kept.
+    """
+    DOMAIN_LIST_URL = (
+        'https://download.cathdb.info/cath/releases/latest-release/'
+        'non-redundant-data-sets/cath-dataset-nonredundant-S35.list'
+    )
+    print('Fetching CATH S35 representative domain list …')
+    try:
+        with urllib.request.urlopen(DOMAIN_LIST_URL, timeout=30) as resp:
+            raw = resp.read().decode('utf-8', errors='replace')
+    except Exception as exc:
+        print(f'  Could not fetch CATH domain list ({exc}). Falling back to curated list.')
+        return None  # caller falls back to RCSB search
+
+    # Each non-comment line is an 8-character CATH domain ID, e.g. 1cukA01
+    domain_ids = [ln.strip() for ln in raw.splitlines()
+                  if ln.strip() and not ln.startswith('#')
+                  and len(ln.strip()) >= 7]
+    print(f'  {len(domain_ids)} S35 domains found.')
+
+    # Shuffle so successive runs give variety
+    import random
+    random.seed(0)
+    random.shuffle(domain_ids)
+
+    ok = 0
+    for dom in domain_ids:
+        if ok >= n:
+            break
+        pdb_id = dom[:4].lower()
+        path, status = download_pdb(pdb_id, output_dir)
+        if status == 'downloaded':
+            print(f'  [CATH {ok+1:3d}/{n}] ✓ {pdb_id}  (domain {dom})')
+            ok += 1
+        elif status == 'skipped':
+            ok += 1  # already on disk — counts toward quota
+        else:
+            print(f'  [CATH] ✗ {pdb_id}: {status}')
+        time.sleep(0.1)
+    return ok
+
+
 def main():
     parser = argparse.ArgumentParser(description='Download small PDB structures for training')
     parser.add_argument('--n', type=int, default=80, help='Number of structures to download')
@@ -176,12 +225,30 @@ def main():
     parser.add_argument('--max-resolution', type=float, default=2.5, help='Max X-ray resolution (Å)')
     parser.add_argument('--use-fallback', action='store_true',
                         help='Skip API search and use built-in curated list')
+    parser.add_argument('--cath-s35', action='store_true',
+                        help='Download CATH S35 non-redundant representative domains '
+                             '(better benchmark dataset than random RCSB search)')
     args = parser.parse_args()
 
     os.makedirs(args.out, exist_ok=True)
     print(f'Downloading up to {args.n} PDB structures → {args.out}/')
 
-    if args.use_fallback:
+    if args.cath_s35:
+        print('Mode: CATH S35 non-redundant domains')
+        result = _download_cath_s35(args.n, args.out,
+                                    min_residues=args.min_residues,
+                                    max_residues=args.max_residues)
+        if result is None:
+            print('CATH download failed; falling back to RCSB curated list.')
+            ids = FALLBACK_PDB_IDS[:args.n]
+        else:
+            print(f'\nDone: {result} CATH S35 structures collected in {os.path.abspath(args.out)}')
+            print('\nNext step — train on real data:')
+            print('  python src/train.py --train-from-pdb --pdb-dir', args.out,
+                  '--model transformer --epochs 60 --lr 5e-4 '
+                  '--save-path model_final_real.pt --csv train_history_real.csv')
+            return
+    elif args.use_fallback:
         ids = FALLBACK_PDB_IDS[:args.n]
         print(f'Using curated fallback list ({len(ids)} entries)')
     else:

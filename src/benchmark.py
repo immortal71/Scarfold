@@ -56,6 +56,65 @@ def _evaluate_one(model, seq, true_coords):
     }
 
 
+# ── naive baselines ───────────────────────────────────────────────────────────
+
+def _random_pred_dist(L, rng=None):
+    """Fully random symmetric distance matrix — absolute lower bound."""
+    if rng is None:
+        rng = np.random.default_rng(0)
+    raw = rng.uniform(3.0, 35.0, (L, L)).astype(np.float32)
+    m = 0.5 * (raw + raw.T)
+    np.fill_diagonal(m, 0.0)
+    return m
+
+
+def _separation_pred_dist(L):
+    """Sequence-separation heuristic: dist[i,j] = |i-j| × 3.8 Å.
+
+    3.8 Å is the average Cα–Cα step between consecutive residues.
+    This ignores all sequence content — so beating it means the model
+    has learned something *structural* rather than just *local chain geometry*.
+    """
+    idx = np.arange(L, dtype=np.float32)
+    sep = np.abs(idx[:, None] - idx[None, :])
+    return sep * 3.8
+
+
+def _mean_pred_dist(train_Y, L):
+    """Predict the global mean inter-residue distance for every pair.
+
+    Training-set mean is an unbiased estimate if the test set is drawn from
+    the same distribution — this baseline has 0 sequence sensitivity.
+    """
+    nonzero = train_Y[train_Y > 0]
+    mean_d = float(nonzero.mean()) if len(nonzero) > 0 else 10.0
+    m = np.full((L, L), mean_d, dtype=np.float32)
+    np.fill_diagonal(m, 0.0)
+    return m
+
+
+def _eval_naive(pred_dist, seq, true_coords):
+    """Compute eval metrics for a pre-built naive distance matrix."""
+    true_dist = utils.coords_to_distances(true_coords)
+    pred_coords = utils.gradient_mds(pred_dist, dim=3, n_iter=200)
+    N = min(pred_coords.shape[0], true_coords.shape[0])
+    rmsd_aligned, aligned_pred = utils.rmsd_kabsch(pred_coords[:N], true_coords[:N])
+    plddt = float(md.pseudo_plddt(pred_dist[:N, :N], true_dist[:N, :N]).mean())
+    local_ldt = float(utils.local_lddt(pred_dist[:N, :N], true_dist[:N, :N]).mean())
+    cmap = md.contact_map_score(pred_dist[:N, :N], true_dist[:N, :N])
+    tm = utils.tm_score(aligned_pred, true_coords[:N])
+    return {
+        'rmsd_unaligned': float(np.sqrt(np.mean((pred_coords[:N] - true_coords[:N]) ** 2))),
+        'rmsd_aligned': float(rmsd_aligned),
+        'pLDDT': plddt,
+        'local_lDDT': local_ldt,
+        'contact_f1': float(cmap['f1']),
+        'contact_precision': float(cmap['precision']),
+        'contact_recall': float(cmap['recall']),
+        'tm_proxy': float(tm),
+    }
+
+
 def _train_model(model_type, train_X, train_Y, seq_len, epochs, lr, device):
     model = md.get_model(model_type, seq_len)
     model = md.train_simple(model, train_X, train_Y, epochs=epochs, lr=lr,
@@ -155,32 +214,84 @@ def main():
         }
         results[model_type]['n_evaluated'] = len(scores)
 
-    # ── statistical tests (paired t-test) ─────────────────────────────────────
-    print('\n' + '=' * 68)
-    print(f'{"Metric":<22} {"MLP mean±std":<22} {"Transformer mean±std":<22} p-value')
-    print('-' * 68)
+    # ── naive baseline evaluation ──────────────────────────────────────────────
+    print('\nEvaluating naive baselines ...')
+    rng_base = np.random.default_rng(0)
+    for baseline_name, bl_fn in [
+        ('random', lambda seq, true: _eval_naive(
+            _random_pred_dist(len(seq), rng=rng_base), seq, true)),
+        ('seq_separation', lambda seq, true: _eval_naive(
+            _separation_pred_dist(len(seq)), seq, true)),
+        ('mean_distance', lambda seq, true: _eval_naive(
+            _mean_pred_dist(train_Y, len(seq)), seq, true)),
+    ]:
+        bl_scores = []
+        for seq, true_coords in zip(test_seqs, test_coords):
+            try:
+                bl_scores.append(bl_fn(seq, true_coords))
+            except Exception as exc:
+                print(f'  Warning: baseline {baseline_name} sample failed: {exc}')
+        if bl_scores:
+            metrics = list(bl_scores[0].keys())
+            results[baseline_name] = {
+                metric: _summary([s[metric] for s in bl_scores])
+                for metric in metrics
+            }
+            results[baseline_name]['n_evaluated'] = len(bl_scores)
+        print(f'  {baseline_name}: {len(bl_scores)} samples evaluated')
 
-    stat_tests = {}
+    # ── statistical tests (paired t-test) ─────────────────────────────────────
+    model_order = ['random', 'seq_separation', 'mean_distance', 'mlp', 'transformer']
+    model_labels = {
+        'random': 'Random',
+        'seq_separation': 'Seq-sep',
+        'mean_distance': 'Mean-dist',
+        'mlp': 'MLP',
+        'transformer': 'Transformer',
+    }
+
+    print('\n' + '═' * 92)
+    print(f'{"Metric":<20}', end='')
+    for m in model_order:
+        if m in results:
+            print(f' {model_labels[m]:>17}', end='')
+    print()
+    print('─' * 92)
+
     for metric in ['rmsd_aligned', 'contact_f1', 'pLDDT', 'local_lDDT', 'tm_proxy']:
         if metric not in results.get('mlp', {}):
             continue
-        mlp_r = results['mlp'][metric]
-        tr_r = results['transformer'][metric]
-        # We don't have per-sample paired values in summary, so report means
-        mlp_str = f"{mlp_r['mean']:.4f} ± {mlp_r['std']:.4f}"
-        tr_str  = f"{tr_r['mean']:.4f} ± {tr_r['std']:.4f}"
-        # approximate t-statistic from summary statistics
-        n = mlp_r['n']
-        pooled_se = np.sqrt((mlp_r['std']**2 + tr_r['std']**2) / n) if n > 1 else 1.0
-        t_stat = (tr_r['mean'] - mlp_r['mean']) / (pooled_se + 1e-12)
-        p_val = 2 * stats.t.sf(abs(t_stat), df=max(n - 1, 1))
-        sig = '***' if p_val < 0.001 else ('**' if p_val < 0.01 else ('*' if p_val < 0.05 else ''))
-        stat_tests[metric] = {'t_stat': float(t_stat), 'p_value': float(p_val)}
-        print(f'{metric:<22} {mlp_str:<22} {tr_str:<22} {p_val:.4f} {sig}')
+        print(f'{metric:<20}', end='')
+        for m in model_order:
+            if m not in results or metric not in results[m]:
+                continue
+            r = results[m][metric]
+            print(f' {r["mean"]:8.4f}±{r["std"]:6.4f}', end='')
+        print()
+    print('═' * 92)
 
-    print('=' * 68)
-    print('Significance: * p<0.05, ** p<0.01, *** p<0.001')
-    print('Positive t-stat = Transformer > MLP (higher is better for pLDDT/F1, lower for RMSD)')
+    # t-tests: Transformer vs each other method
+    stat_tests = {}
+    print('\nPaired t-tests (Transformer vs other methods):')
+    print(f'{"vs":<20} {"Metric":<18} {"t-stat":>8} {"p-value":>10} {"sig":>5}')
+    print('-' * 65)
+    for other in ['random', 'seq_separation', 'mean_distance', 'mlp']:
+        if other not in results:
+            continue
+        for metric in ['contact_f1', 'rmsd_aligned', 'pLDDT']:
+            if metric not in results.get('transformer', {}) or metric not in results.get(other, {}):
+                continue
+            tr_r = results['transformer'][metric]
+            ot_r = results[other][metric]
+            n = tr_r['n']
+            pooled_se = np.sqrt((tr_r['std'] ** 2 + ot_r['std'] ** 2) / max(n, 2))
+            t_stat = (tr_r['mean'] - ot_r['mean']) / (pooled_se + 1e-12)
+            p_val = 2 * stats.t.sf(abs(t_stat), df=max(n - 1, 1))
+            sig = '***' if p_val < 0.001 else ('**' if p_val < 0.01 else ('*' if p_val < 0.05 else 'ns'))
+            key = f'transformer_vs_{other}_{metric}'
+            stat_tests[key] = {'t_stat': float(t_stat), 'p_value': float(p_val)}
+            print(f'{model_labels[other]:<20} {metric:<18} {t_stat:>8.3f} {p_val:>10.4f} {sig:>5}')
+    print('Significance: * p<0.05, ** p<0.01, *** p<0.001, ns=not significant')
 
     # ── winner summary ────────────────────────────────────────────────────────
     if 'contact_f1' in results.get('mlp', {}) and 'contact_f1' in results.get('transformer', {}):
@@ -188,6 +299,11 @@ def main():
         mlp_f1 = results['mlp']['contact_f1']['mean']
         delta = (tr_f1 - mlp_f1) / (mlp_f1 + 1e-8) * 100
         print(f'\nTransformer contact F1 improvement over MLP: {delta:+.1f}%')
+    if 'contact_f1' in results.get('seq_separation', {}):
+        tr_f1 = results['transformer']['contact_f1']['mean']
+        sep_f1 = results['seq_separation']['contact_f1']['mean']
+        delta = (tr_f1 - sep_f1) / (sep_f1 + 1e-8) * 100
+        print(f'Transformer contact F1 improvement over sequence-separation baseline: {delta:+.1f}%')
 
     # ── save results ───────────────────────────────────────────────────────────
     output = {
