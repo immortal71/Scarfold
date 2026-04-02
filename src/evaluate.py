@@ -23,12 +23,15 @@ def evaluate_model(model, seq, true_coords, pssm_path=None):
     """Evaluate model on one sequence.  Optionally supply a PSI-BLAST PSSM file."""
     true_dist = utils.coords_to_distances(true_coords)
 
-    # ── build encoding ────────────────────────────────────────────────────────
+    # ── build encoding — honour the aa_dim the model was trained with ────────
+    model_aa_dim = getattr(model, 'aa_dim', utils.RICH_AA_DIM)
     if pssm_path and _HAS_PSSM:
         pssm_matrix = pssm_utils.parse_psiblast_pssm(pssm_path)
         enc = pssm_utils.encoding_with_pssm(seq, pssm=pssm_matrix)
+    elif model_aa_dim == 20:
+        enc = utils.one_hot(seq)          # legacy model trained on one-hot
     else:
-        enc = utils.rich_encoding(seq)
+        enc = utils.rich_encoding(seq)    # modern model (48-dim rich encoding)
 
     pred_dist = md.predict(model, enc)
     pred_dist = 0.5 * (pred_dist + pred_dist.T)

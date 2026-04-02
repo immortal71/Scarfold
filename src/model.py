@@ -342,30 +342,48 @@ def get_model(model_type, seq_len, aa_dim=RICH_AA_DIM, num_recycles=3):
 
 # ── Loss functions ────────────────────────────────────────────────────────────
 
-def distogram_loss(logits, true_dists):
-    """Cross-entropy over 64+1 distance bins.
+def distogram_loss(logits, true_dists, backbone_weight: float = 5.0):
+    """Cross-entropy over 64+1 distance bins, with backbone-aware upweighting.
 
     This is the same objective used by AlphaFold (distogram head).
     It gives much sharper gradients for contact prediction than MSE regression.
 
+    **Backbone-aware weighting**: consecutive Cα pairs (|i-j|=1) always have
+    distance ≈ 3.8 Å, a hard physical constraint.  Upweighting these pairs
+    (default ×5) gives the model a strong, reliable gradient signal early in
+    training, which anchors the rest of the distance prediction.  Pairs with
+    |i-j|=2 are weighted ×2 (more constrained by bond angles than distant pairs).
+
     Args:
-        logits:     (B, L, L, NUM_BINS+1) — raw logits from the model
-        true_dists: (B, L, L) — ground-truth distance matrices (Å)
+        logits:           (B, L, L, NUM_BINS+1) — raw logits from the model
+        true_dists:       (B, L, L) — ground-truth distance matrices (Å)
+        backbone_weight:  upweight factor for |i-j|=1 pairs (default 5)
     """
     bin_edges = torch.tensor(get_bin_edges(), device=logits.device)
-    # convert continuous distances to bin indices
-    # digitize: bins[i] = k if edges[k] <= d < edges[k+1]
     B, L, _, n_bins = logits.shape
     true_bins = torch.bucketize(true_dists, bin_edges[1:]).clamp(0, n_bins - 1).long()  # (B,L,L)
-    # flatten spatial dims for cross-entropy
-    logits_flat = logits.reshape(B * L * L, n_bins)
-    target_flat = true_bins.reshape(B * L * L)
-    # ignore self-distances (diagonal) — they're always 0
-    diag_mask = torch.eye(L, device=logits.device, dtype=torch.bool)
-    diag_mask = diag_mask.unsqueeze(0).expand(B, -1, -1).reshape(B * L * L)
-    logits_flat = logits_flat[~diag_mask]
-    target_flat = target_flat[~diag_mask]
-    return nn.functional.cross_entropy(logits_flat, target_flat)
+
+    # ── Per-pair sample weights based on sequence separation ─────────────────
+    idx = torch.arange(L, device=logits.device)
+    sep = (idx.unsqueeze(0) - idx.unsqueeze(1)).abs()   # (L, L)
+    pair_w = torch.where(sep == 1,
+                         torch.full_like(sep, backbone_weight, dtype=torch.float),
+                         torch.where(sep == 2,
+                                     torch.full_like(sep, 2.0, dtype=torch.float),
+                                     torch.ones(L, L, dtype=torch.float, device=logits.device)))
+    pair_w = pair_w.unsqueeze(0).expand(B, -1, -1)     # (B, L, L)
+
+    # ── Diagonal mask: ignore self-distances (always 0 Å) ────────────────────
+    diag = torch.eye(L, device=logits.device, dtype=torch.bool)
+    diag = diag.unsqueeze(0).expand(B, -1, -1)          # (B, L, L)
+    keep = ~diag
+
+    logits_flat = logits[keep]                           # (N, n_bins) where N = B*L*(L-1)
+    target_flat = true_bins[keep]                        # (N,)
+    weight_flat = pair_w[keep]                           # (N,)
+
+    loss_per = nn.functional.cross_entropy(logits_flat, target_flat, reduction='none')
+    return (loss_per * weight_flat).mean()
 
 
 def _contact_bce_loss(logits_or_dists, true_dists, threshold=8.0, is_logits=True):
