@@ -1,0 +1,29 @@
+{
+  "1crn": {
+    "rmsd_unaligned": 11.493253707885742,
+    "rmsd_aligned": 9.579690694531841,
+    "pLDDT": 35.10266876220703,
+    "local_lDDT": 43.238311767578125,
+    "contact_f1": 0.6826347257303955,
+    "long_range_precision_L5": 0.0,
+    "tm_proxy": 0.10488729395887006
+  },
+  "2gb1": {
+    "rmsd_unaligned": 8.543397903442383,
+    "rmsd_aligned": 8.746371095586525,
+    "pLDDT": 32.24777603149414,
+    "local_lDDT": 41.914642333984375,
+    "contact_f1": 0.632352936367623,
+    "long_range_precision_L5": 0.0,
+    "tm_proxy": 0.14316303539070155
+  },
+  "1vii": {
+    "rmsd_unaligned": 5.493671894073486,
+    "rmsd_aligned": 12.476055126798933,
+    "pLDDT": 39.67406463623047,
+    "local_lDDT": 46.7817268371582,
+    "contact_f1": 0.7868852409852863,
+    "long_range_precision_L5": 0.0,
+    "tm_proxy": 0.02039040619747164
+  }
+}

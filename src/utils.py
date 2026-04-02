@@ -386,25 +386,51 @@ def local_lddt(pred_dists, true_dists, cutoff=15.0):
 
 
 def contact_map_metrics(pred_dists, true_dists, threshold=8.0):
+    """Contact-map precision/recall/F1 at all ranges + long-range (|i-j|>=12).
+
+    The long-range contact precision at top-L/5 predicted contacts is the
+    standard metric used in CASP / published structure-prediction papers.
+    Short-range contacts (|i-j|<6) are trivially predictable from backbone
+    geometry alone, so long-range metrics are the meaningful comparison.
+    """
     assert pred_dists.shape == true_dists.shape
     L = pred_dists.shape[0]
-    mask = np.triu(np.ones((L,L), dtype=bool), k=1)
-    p = pred_dists[mask] < threshold
-    t = true_dists[mask] < threshold
-    tp = np.logical_and(p,t).sum()
-    fp = np.logical_and(p, np.logical_not(t)).sum()
-    fn = np.logical_and(np.logical_not(p), t).sum()
-    precision = tp / (tp + fp + 1e-8)
-    recall = tp / (tp + fn + 1e-8)
-    f1 = 2.0 * precision * recall / (precision + recall + 1e-8)
-    return {
-        'precision': float(precision),
-        'recall': float(recall),
-        'f1': float(f1),
-        'tp': int(tp),
-        'fp': int(fp),
-        'fn': int(fn),
-    }
+
+    def _metrics(sep_min, sep_max=None):
+        i_idx, j_idx = np.triu_indices(L, k=sep_min)
+        if sep_max is not None:
+            keep = (j_idx - i_idx) < sep_max
+            i_idx, j_idx = i_idx[keep], j_idx[keep]
+        if len(i_idx) == 0:
+            return dict(precision=0.0, recall=0.0, f1=0.0, tp=0, fp=0, fn=0,
+                        long_range_precision_L5=0.0)
+        p = pred_dists[i_idx, j_idx] < threshold
+        t = true_dists[i_idx, j_idx] < threshold
+        tp = int(np.logical_and(p, t).sum())
+        fp = int(np.logical_and(p, ~t).sum())
+        fn = int(np.logical_and(~p, t).sum())
+        prec = tp / (tp + fp + 1e-8)
+        rec  = tp / (tp + fn + 1e-8)
+        f1   = 2.0 * prec * rec / (prec + rec + 1e-8)
+        return dict(precision=float(prec), recall=float(rec), f1=float(f1),
+                    tp=tp, fp=fp, fn=fn)
+
+    res = _metrics(sep_min=1)   # all pairs
+
+    # Long-range top-L/5 precision: standard CASP metric
+    # Take only pairs with |i-j| >= 12, rank by predicted probability of contact
+    # (lower predicted distance = higher probability), evaluate top-L/5.
+    lr_i, lr_j = np.triu_indices(L, k=12)
+    if len(lr_i) > 0:
+        lr_pred = pred_dists[lr_i, lr_j]
+        lr_true = true_dists[lr_i, lr_j] < threshold
+        top_k   = max(1, L // 5)
+        order   = np.argsort(lr_pred)[:top_k]          # lowest dist = most likely contact
+        res['long_range_precision_L5'] = float(lr_true[order].mean())
+    else:
+        res['long_range_precision_L5'] = 0.0
+
+    return res
 
 
 def pdb_ca_coords(pdb_path, chain='A', max_residues=120):

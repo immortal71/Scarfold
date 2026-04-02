@@ -55,6 +55,7 @@ def evaluate_model(model, seq, true_coords, pssm_path=None):
         'pLDDT': plddt,
         'local_lDDT': local_ldt,
         'contact_f1': float(cmap['f1']),
+        'long_range_precision_L5': float(cmap.get('long_range_precision_L5', 0.0)),
         'tm_proxy': float(tm),
     }
 

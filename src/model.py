@@ -342,22 +342,22 @@ def get_model(model_type, seq_len, aa_dim=RICH_AA_DIM, num_recycles=3):
 
 # ── Loss functions ────────────────────────────────────────────────────────────
 
-def distogram_loss(logits, true_dists, backbone_weight: float = 5.0):
-    """Cross-entropy over 64+1 distance bins, with backbone-aware upweighting.
+def distogram_loss(logits, true_dists, backbone_weight: float = 1.0):
+    """Cross-entropy over 64+1 distance bins.
 
     This is the same objective used by AlphaFold (distogram head).
     It gives much sharper gradients for contact prediction than MSE regression.
 
-    **Backbone-aware weighting**: consecutive Cα pairs (|i-j|=1) always have
-    distance ≈ 3.8 Å, a hard physical constraint.  Upweighting these pairs
-    (default ×5) gives the model a strong, reliable gradient signal early in
-    training, which anchors the rest of the distance prediction.  Pairs with
-    |i-j|=2 are weighted ×2 (more constrained by bond angles than distant pairs).
+    Optionally up-weights consecutive Cα pairs (|i-j|=1, known to be 3.8 Å)
+    and next-nearest pairs (|i-j|=2).  Default backbone_weight=1.0 is uniform
+    weighting — the physical constraint is enforced by the backbone bond penalty
+    in gradient_mds, not the training loss, giving full gradient capacity to
+    long-range contact prediction.
 
     Args:
         logits:           (B, L, L, NUM_BINS+1) — raw logits from the model
         true_dists:       (B, L, L) — ground-truth distance matrices (Å)
-        backbone_weight:  upweight factor for |i-j|=1 pairs (default 5)
+        backbone_weight:  upweight factor for |i-j|=1 pairs (default 1.0 = uniform)
     """
     bin_edges = torch.tensor(get_bin_edges(), device=logits.device)
     B, L, _, n_bins = logits.shape
