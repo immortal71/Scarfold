@@ -1,65 +1,65 @@
 {
   "1crn": {
-    "rmsd_unaligned": 10.346128463745117,
-    "rmsd_aligned": 12.46752995723711,
-    "pLDDT": 49.75636291503906,
-    "local_lDDT": 59.701534271240234,
-    "contact_f1": 0.7762803184527867,
-    "long_range_precision_L5": 0.7777777777777778,
-    "tm_proxy": 0.09709065252939118
+    "rmsd_unaligned": 11.406951904296875,
+    "rmsd_aligned": 8.727376911039677,
+    "pLDDT": 47.63761520385742,
+    "local_lDDT": 58.05522537231445,
+    "contact_f1": 0.743801647921742,
+    "long_range_precision_L5": 0.5555555555555556,
+    "tm_proxy": 0.0949245485587501
   },
   "1vii": {
-    "rmsd_unaligned": 6.131292819976807,
-    "rmsd_aligned": 11.735354002437624,
-    "pLDDT": 42.027015686035156,
-    "local_lDDT": 44.86310577392578,
-    "contact_f1": 0.8140350826622346,
+    "rmsd_unaligned": 6.077901840209961,
+    "rmsd_aligned": 12.859766155631693,
+    "pLDDT": 41.97675323486328,
+    "local_lDDT": 42.99455261230469,
+    "contact_f1": 0.8394160533424797,
     "long_range_precision_L5": 0.0,
-    "tm_proxy": 0.0425201631506176
+    "tm_proxy": 0.0329003285639834
   },
   "1lyz": {
-    "rmsd_unaligned": 18.372234344482422,
-    "rmsd_aligned": 10.243228685665045,
-    "pLDDT": 34.51924133300781,
-    "local_lDDT": 38.07189178466797,
-    "contact_f1": 0.6745843184351251,
+    "rmsd_unaligned": 19.109968185424805,
+    "rmsd_aligned": 9.214120017751739,
+    "pLDDT": 38.2246208190918,
+    "local_lDDT": 45.472408294677734,
+    "contact_f1": 0.7212389332283266,
     "long_range_precision_L5": 0.16666666666666666,
-    "tm_proxy": 0.12165353515174762
+    "tm_proxy": 0.09980305190967159
   },
   "1trz": {
-    "rmsd_unaligned": 13.083149909973145,
-    "rmsd_aligned": 7.6927530511978315,
-    "pLDDT": 51.996337890625,
-    "local_lDDT": 52.783668518066406,
-    "contact_f1": 0.8741721803166529,
-    "long_range_precision_L5": 0.25,
-    "tm_proxy": 0.009235114352770473
+    "rmsd_unaligned": 12.398879051208496,
+    "rmsd_aligned": 12.618420940758114,
+    "pLDDT": 53.195499420166016,
+    "local_lDDT": 53.29057312011719,
+    "contact_f1": 0.8827586155700358,
+    "long_range_precision_L5": 0.0,
+    "tm_proxy": 0.0022543761700471615
   },
   "1aho": {
-    "rmsd_unaligned": 7.437735080718994,
-    "rmsd_aligned": 14.204153030343024,
-    "pLDDT": 31.954750061035156,
-    "local_lDDT": 36.33970642089844,
-    "contact_f1": 0.6041189887860334,
-    "long_range_precision_L5": 0.25,
-    "tm_proxy": 0.05165685487324086
+    "rmsd_unaligned": 9.150032043457031,
+    "rmsd_aligned": 14.850274350910707,
+    "pLDDT": 30.612232208251953,
+    "local_lDDT": 31.714994430541992,
+    "contact_f1": 0.6160337505904503,
+    "long_range_precision_L5": 0.16666666666666666,
+    "tm_proxy": 0.049435410899778036
   },
   "2ptl": {
-    "rmsd_unaligned": 11.905110359191895,
-    "rmsd_aligned": 18.556925725329236,
-    "pLDDT": 48.876197814941406,
-    "local_lDDT": 56.70607376098633,
-    "contact_f1": 0.8039702183369148,
-    "long_range_precision_L5": 0.25,
-    "tm_proxy": 0.049075157321836906
+    "rmsd_unaligned": 16.562768936157227,
+    "rmsd_aligned": 22.853378133066908,
+    "pLDDT": 47.47273254394531,
+    "local_lDDT": 56.88117980957031,
+    "contact_f1": 0.8029556600288772,
+    "long_range_precision_L5": 0.6666666666666666,
+    "tm_proxy": 0.030768128190567054
   },
   "1tig": {
-    "rmsd_unaligned": 11.280816078186035,
-    "rmsd_aligned": 15.108399410597656,
-    "pLDDT": 46.24666976928711,
-    "local_lDDT": 52.5933952331543,
-    "contact_f1": 0.8341013774883731,
-    "long_range_precision_L5": 0.16666666666666666,
-    "tm_proxy": 0.04958178580284755
+    "rmsd_unaligned": 13.881817817687988,
+    "rmsd_aligned": 11.255962698843039,
+    "pLDDT": 46.06714630126953,
+    "local_lDDT": 52.831382751464844,
+    "contact_f1": 0.8436018907648077,
+    "long_range_precision_L5": 0.08333333333333333,
+    "tm_proxy": 0.08417742554549568
   }
 }
