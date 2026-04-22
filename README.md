@@ -168,12 +168,13 @@ Evaluation on **7 diverse completely held-out** proteins (never seen during trai
 
 | Metric | v3 | v4 | v5 | **v6 (ESM-2)** |
 |---|---|---|---|---|
-| Contact F1 | 0.700 | 0.720 | 0.747 | **TBD** |
-| Long-range precision (P@L/5, \|i-j\|≥12) | 0.000 | 0.111 | 0.266 | **TBD** |
-| local lDDT | 44.0 | 39.5 | 44.9 | **TBD** |
+| Contact F1 | 0.700 | 0.720 | 0.747 | **0.769** |
+| Long-range precision (P@L/5, \|i-j\|≥12) | 0.000 | 0.111 | 0.266 | **0.266** |
+| local lDDT | 44.0 | 39.5 | 44.9 | **48.7** |
+| TM-score proxy | 0.089 | — | 0.059 | **0.060** |
 | Input features | 48-dim | 48-dim | 48-dim | **368-dim (ESM-2+rich)** |
 
-*v6 results are pending: run `python src/train_v6.py` then `python src/eval_v6.py`.*
+*v6 trained for 60 epochs (5 warm-up + 55 fine-tune) from v5 checkpoint. ESM-2 improves lDDT (+8.5%) and F1 (+3%) but TM-score and long-range precision require more epochs to converge with 368-dim inputs. Run `python src/train_v6.py --epochs 150` for a more complete training budget.*
 
 > **Honest context on contact F1**: Our controlled ablation (see `report/report.md`) reveals that a zero-learning sequence-distance baseline achieves F1 = **0.712**, because most contacts in small proteins are between sequence-adjacent residues. Contact F1 alone is insufficient. The scientifically meaningful metric is **long-range precision P@L/5** (|i-j| ≥ 12): v3 achieves 0.000, v4 achieves 0.111, v5 achieves **0.266** across 7 diverse proteins — the pair track with triangle multiplication + LR-weighted training loss is what drives this.
 

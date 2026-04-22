@@ -1,0 +1,65 @@
+{
+  "1crn": {
+    "rmsd_unaligned": 10.346128463745117,
+    "rmsd_aligned": 12.46752995723711,
+    "pLDDT": 49.75636291503906,
+    "local_lDDT": 59.701534271240234,
+    "contact_f1": 0.7762803184527867,
+    "long_range_precision_L5": 0.7777777777777778,
+    "tm_proxy": 0.09709065252939118
+  },
+  "1vii": {
+    "rmsd_unaligned": 6.131292819976807,
+    "rmsd_aligned": 11.735354002437624,
+    "pLDDT": 42.027015686035156,
+    "local_lDDT": 44.86310577392578,
+    "contact_f1": 0.8140350826622346,
+    "long_range_precision_L5": 0.0,
+    "tm_proxy": 0.0425201631506176
+  },
+  "1lyz": {
+    "rmsd_unaligned": 18.372234344482422,
+    "rmsd_aligned": 10.243228685665045,
+    "pLDDT": 34.51924133300781,
+    "local_lDDT": 38.07189178466797,
+    "contact_f1": 0.6745843184351251,
+    "long_range_precision_L5": 0.16666666666666666,
+    "tm_proxy": 0.12165353515174762
+  },
+  "1trz": {
+    "rmsd_unaligned": 13.083149909973145,
+    "rmsd_aligned": 7.6927530511978315,
+    "pLDDT": 51.996337890625,
+    "local_lDDT": 52.783668518066406,
+    "contact_f1": 0.8741721803166529,
+    "long_range_precision_L5": 0.25,
+    "tm_proxy": 0.009235114352770473
+  },
+  "1aho": {
+    "rmsd_unaligned": 7.437735080718994,
+    "rmsd_aligned": 14.204153030343024,
+    "pLDDT": 31.954750061035156,
+    "local_lDDT": 36.33970642089844,
+    "contact_f1": 0.6041189887860334,
+    "long_range_precision_L5": 0.25,
+    "tm_proxy": 0.05165685487324086
+  },
+  "2ptl": {
+    "rmsd_unaligned": 11.905110359191895,
+    "rmsd_aligned": 18.556925725329236,
+    "pLDDT": 48.876197814941406,
+    "local_lDDT": 56.70607376098633,
+    "contact_f1": 0.8039702183369148,
+    "long_range_precision_L5": 0.25,
+    "tm_proxy": 0.049075157321836906
+  },
+  "1tig": {
+    "rmsd_unaligned": 11.280816078186035,
+    "rmsd_aligned": 15.108399410597656,
+    "pLDDT": 46.24666976928711,
+    "local_lDDT": 52.5933952331543,
+    "contact_f1": 0.8341013774883731,
+    "long_range_precision_L5": 0.16666666666666666,
+    "tm_proxy": 0.04958178580284755
+  }
+}
