@@ -1,0 +1,380 @@
+{
+  "timestamp": "20260402_202743",
+  "casp_rounds": "both",
+  "model_path": "checkpoints/best_pdb_v4.pt",
+  "n_params": 3567880,
+  "seq_len": 60,
+  "targets": [
+    {
+      "casp_target": "T0950",
+      "pdb_id": "6msp",
+      "chain": "A",
+      "casp_version": 13,
+      "notes": "helical repeat + novel fold",
+      "status": "ok",
+      "seq_len": 60,
+      "sequence": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+      "rmsd_unaligned": 13.193977355957031,
+      "rmsd_aligned": 14.232436018579245,
+      "pLDDT": 37.228309631347656,
+      "local_lDDT": 43.53157043457031,
+      "contact_f1": 0.7519999949858133,
+      "long_range_precision_L5": 0.0,
+      "tm_proxy": 0.10449333422122926
+    },
+    {
+      "casp_target": "T0953s1",
+      "pdb_id": "6ms9",
+      "chain": "A",
+      "casp_version": 13,
+      "notes": "short FM target",
+      "status": "ok",
+      "seq_len": 60,
+      "sequence": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+      "rmsd_unaligned": 34.13153839111328,
+      "rmsd_aligned": 18.482979617853285,
+      "pLDDT": 32.376407623291016,
+      "local_lDDT": 33.35279846191406,
+      "contact_f1": 0.6683046633768994,
+      "long_range_precision_L5": 0.0,
+      "tm_proxy": 0.03139149475791338
+    },
+    {
+      "casp_target": "T0955",
+      "pdb_id": "6gsd",
+      "chain": "A",
+      "casp_version": 13,
+      "notes": "all-beta FM",
+      "status": "ok",
+      "seq_len": 60,
+      "sequence": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+      "rmsd_unaligned": 20.145511627197266,
+      "rmsd_aligned": 13.588406735418495,
+      "pLDDT": 31.228071212768555,
+      "local_lDDT": 30.801464080810547,
+      "contact_f1": 0.6478873190808703,
+      "long_range_precision_L5": 0.0,
+      "tm_proxy": 0.08214496571415446
+    },
+    {
+      "casp_target": "T0960",
+      "pdb_id": "6msm",
+      "chain": "A",
+      "casp_version": 13,
+      "notes": "mixed alpha-beta FM",
+      "status": "ok",
+      "seq_len": 60,
+      "sequence": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+      "rmsd_unaligned": 155.37266540527344,
+      "rmsd_aligned": 19.23700693656828,
+      "pLDDT": 37.8847770690918,
+      "local_lDDT": 43.33329391479492,
+      "contact_f1": 0.7788944674015809,
+      "long_range_precision_L5": 0.0,
+      "tm_proxy": 0.048189451185258754
+    },
+    {
+      "casp_target": "T0966",
+      "pdb_id": "6gv0",
+      "chain": "A",
+      "casp_version": 13,
+      "notes": "all-alpha FM",
+      "status": "error: 'A'"
+    },
+    {
+      "casp_target": "T0968",
+      "pdb_id": "6o08",
+      "chain": "A",
+      "casp_version": 13,
+      "notes": "mixed FM",
+      "status": "ok",
+      "seq_len": 60,
+      "sequence": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+      "rmsd_unaligned": 18.041563034057617,
+      "rmsd_aligned": 12.41230363926892,
+      "pLDDT": 34.24810028076172,
+      "local_lDDT": 35.24287414550781,
+      "contact_f1": 0.6898262977884231,
+      "long_range_precision_L5": 0.0,
+      "tm_proxy": 0.06797110306486541
+    },
+    {
+      "casp_target": "T0969",
+      "pdb_id": "6ms6",
+      "chain": "A",
+      "casp_version": 13,
+      "notes": "short mixed FM",
+      "status": "error: 'NoneType' object has no attribute 'endswith'"
+    },
+    {
+      "casp_target": "T0975",
+      "pdb_id": "6gv2",
+      "chain": "A",
+      "casp_version": 13,
+      "notes": "all-alpha FM",
+      "status": "ok",
+      "seq_len": 60,
+      "sequence": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+      "rmsd_unaligned": 47.26792526245117,
+      "rmsd_aligned": 10.597883287138455,
+      "pLDDT": 30.876096725463867,
+      "local_lDDT": 31.014453887939453,
+      "contact_f1": 0.7020785171002033,
+      "long_range_precision_L5": 0.0,
+      "tm_proxy": 0.10996864931550362
+    },
+    {
+      "casp_target": "T0980s1",
+      "pdb_id": "6msj",
+      "chain": "A",
+      "casp_version": 13,
+      "notes": "short FM segment",
+      "status": "error: 'NoneType' object has no attribute 'endswith'"
+    },
+    {
+      "casp_target": "T1049",
+      "pdb_id": "7lng",
+      "chain": "A",
+      "casp_version": 14,
+      "notes": "large FM, novel fold",
+      "status": "error: Too short: 0 residues"
+    },
+    {
+      "casp_target": "T1056",
+      "pdb_id": "7m6k",
+      "chain": "A",
+      "casp_version": 14,
+      "notes": "mixed alpha-beta FM",
+      "status": "ok",
+      "seq_len": 60,
+      "sequence": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+      "rmsd_unaligned": 15.926536560058594,
+      "rmsd_aligned": 17.17906491795149,
+      "pLDDT": 31.45621681213379,
+      "local_lDDT": 32.91957092285156,
+      "contact_f1": 0.7862068917155768,
+      "long_range_precision_L5": 0.0,
+      "tm_proxy": 0.04384034862582071
+    },
+    {
+      "casp_target": "T1064",
+      "pdb_id": "7aqo",
+      "chain": "A",
+      "casp_version": 14,
+      "notes": "all-beta FM",
+      "status": "ok",
+      "seq_len": 60,
+      "sequence": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+      "rmsd_unaligned": 156.2974853515625,
+      "rmsd_aligned": 20.066977243032465,
+      "pLDDT": 40.48719787597656,
+      "local_lDDT": 45.33841323852539,
+      "contact_f1": 0.8333333283093423,
+      "long_range_precision_L5": 0.0,
+      "tm_proxy": 0.03161728174513893
+    },
+    {
+      "casp_target": "T1075",
+      "pdb_id": "7m82",
+      "chain": "A",
+      "casp_version": 14,
+      "notes": "helical repeat FM",
+      "status": "ok",
+      "seq_len": 60,
+      "sequence": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+      "rmsd_unaligned": 35.10700225830078,
+      "rmsd_aligned": 15.919777871083436,
+      "pLDDT": 40.67219924926758,
+      "local_lDDT": 45.586483001708984,
+      "contact_f1": 0.7309644620361256,
+      "long_range_precision_L5": 0.0,
+      "tm_proxy": 0.06625499251533512
+    },
+    {
+      "casp_target": "T1082",
+      "pdb_id": "7my4",
+      "chain": "A",
+      "casp_version": 14,
+      "notes": "mixed FM",
+      "status": "ok",
+      "seq_len": 60,
+      "sequence": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+      "rmsd_unaligned": 29.211843490600586,
+      "rmsd_aligned": 16.489543519101655,
+      "pLDDT": 39.40468215942383,
+      "local_lDDT": 47.182044982910156,
+      "contact_f1": 0.8288770003274328,
+      "long_range_precision_L5": 0.0,
+      "tm_proxy": 0.06448573623887319
+    },
+    {
+      "casp_target": "T1091",
+      "pdb_id": "7nr6",
+      "chain": "A",
+      "casp_version": 14,
+      "notes": "de-novo FM",
+      "status": "ok",
+      "seq_len": 60,
+      "sequence": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+      "rmsd_unaligned": 175.3566131591797,
+      "rmsd_aligned": 14.75531004720019,
+      "pLDDT": 32.7795524597168,
+      "local_lDDT": 34.84403991699219,
+      "contact_f1": 0.6749379603201792,
+      "long_range_precision_L5": 0.08333333333333333,
+      "tm_proxy": 0.05974853755057267
+    }
+  ],
+  "aggregate": {
+    "all": {
+      "rmsd_aligned": {
+        "mean": 15.723789984835996,
+        "std": 2.8046150951754028,
+        "median": 15.919777871083436,
+        "min": 10.597883287138455,
+        "max": 20.066977243032465,
+        "n": 11
+      },
+      "local_lDDT": {
+        "mean": 38.46790972622958,
+        "std": 6.163947869493916,
+        "median": 35.24287414550781,
+        "min": 30.801464080810547,
+        "max": 47.182044982910156,
+        "n": 11
+      },
+      "contact_f1": {
+        "mean": 0.7357555365856769,
+        "std": 0.06186424580727934,
+        "median": 0.7309644620361256,
+        "min": 0.6478873190808703,
+        "max": 0.8333333283093423,
+        "n": 11
+      },
+      "long_range_precision_L5": {
+        "mean": 0.007575757575757575,
+        "std": 0.023956648940669543,
+        "median": 0.0,
+        "min": 0.0,
+        "max": 0.08333333333333333,
+        "n": 11
+      },
+      "tm_proxy": {
+        "mean": 0.06455508135769684,
+        "std": 0.025020324329448642,
+        "median": 0.06448573623887319,
+        "min": 0.03139149475791338,
+        "max": 0.10996864931550362,
+        "n": 11
+      },
+      "pLDDT": {
+        "mean": 35.33105555447665,
+        "std": 3.6919758008079975,
+        "median": 34.24810028076172,
+        "min": 30.876096725463867,
+        "max": 40.67219924926758,
+        "n": 11
+      }
+    },
+    "casp13": {
+      "rmsd_aligned": {
+        "mean": 14.758502705804448,
+        "std": 3.1195620194579847,
+        "median": 13.910421376998869,
+        "min": 10.597883287138455,
+        "max": 19.23700693656828,
+        "n": 6
+      },
+      "local_lDDT": {
+        "mean": 36.212742487589516,
+        "std": 5.318075434103289,
+        "median": 34.29783630371094,
+        "min": 30.801464080810547,
+        "max": 43.53157043457031,
+        "n": 6
+      },
+      "contact_f1": {
+        "mean": 0.7064985432889651,
+        "std": 0.04564920664167992,
+        "median": 0.6959524074443132,
+        "min": 0.6478873190808703,
+        "max": 0.7788944674015809,
+        "n": 6
+      },
+      "long_range_precision_L5": {
+        "mean": 0.0,
+        "std": 0.0,
+        "median": 0.0,
+        "min": 0.0,
+        "max": 0.0,
+        "n": 6
+      },
+      "tm_proxy": {
+        "mean": 0.07402649970982082,
+        "std": 0.02830765551908717,
+        "median": 0.07505803438950993,
+        "min": 0.03139149475791338,
+        "max": 0.10996864931550362,
+        "n": 6
+      },
+      "pLDDT": {
+        "mean": 33.9736270904541,
+        "std": 2.7582986783948162,
+        "median": 33.31225395202637,
+        "min": 30.876096725463867,
+        "max": 37.8847770690918,
+        "n": 6
+      }
+    },
+    "casp14": {
+      "rmsd_aligned": {
+        "mean": 16.88213471967385,
+        "std": 1.7796084503890595,
+        "median": 16.489543519101655,
+        "min": 14.75531004720019,
+        "max": 20.066977243032465,
+        "n": 5
+      },
+      "local_lDDT": {
+        "mean": 41.174110412597656,
+        "std": 6.0185204553850165,
+        "median": 45.33841323852539,
+        "min": 32.91957092285156,
+        "max": 47.182044982910156,
+        "n": 5
+      },
+      "contact_f1": {
+        "mean": 0.7708639285417314,
+        "std": 0.06049315288686267,
+        "median": 0.7862068917155768,
+        "min": 0.6749379603201792,
+        "max": 0.8333333283093423,
+        "n": 5
+      },
+      "long_range_precision_L5": {
+        "mean": 0.016666666666666666,
+        "std": 0.03333333333333333,
+        "median": 0.0,
+        "min": 0.0,
+        "max": 0.08333333333333333,
+        "n": 5
+      },
+      "tm_proxy": {
+        "mean": 0.053189379335148126,
+        "std": 0.013372361445925787,
+        "median": 0.05974853755057267,
+        "min": 0.03161728174513893,
+        "max": 0.06625499251533512,
+        "n": 5
+      },
+      "pLDDT": {
+        "mean": 36.959969711303714,
+        "std": 3.9991446584156742,
+        "median": 39.40468215942383,
+        "min": 31.45621681213379,
+        "max": 40.67219924926758,
+        "n": 5
+      }
+    }
+  }
+}

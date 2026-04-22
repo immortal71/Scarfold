@@ -1,0 +1,65 @@
+{
+  "1crn": {
+    "rmsd_unaligned": 12.710182189941406,
+    "rmsd_aligned": 13.00169174000591,
+    "pLDDT": 45.22023010253906,
+    "local_lDDT": 56.12101364135742,
+    "contact_f1": 0.7058823480880624,
+    "long_range_precision_L5": 0.7777777777777778,
+    "tm_proxy": 0.06686055635691349
+  },
+  "1vii": {
+    "rmsd_unaligned": 9.901936531066895,
+    "rmsd_aligned": 7.988157145941907,
+    "pLDDT": 38.57490539550781,
+    "local_lDDT": 40.739498138427734,
+    "contact_f1": 0.8333333283049243,
+    "long_range_precision_L5": 0.0,
+    "tm_proxy": 0.06805534849623568
+  },
+  "1lyz": {
+    "rmsd_unaligned": 16.13912010192871,
+    "rmsd_aligned": 13.532134901369428,
+    "pLDDT": 35.52857208251953,
+    "local_lDDT": 42.841243743896484,
+    "contact_f1": 0.6813186764800386,
+    "long_range_precision_L5": 0.25,
+    "tm_proxy": 0.09275699881580375
+  },
+  "1trz": {
+    "rmsd_unaligned": 12.710692405700684,
+    "rmsd_aligned": 6.893627506648295,
+    "pLDDT": 53.15518569946289,
+    "local_lDDT": 59.0914421081543,
+    "contact_f1": 0.8918918867713661,
+    "long_range_precision_L5": 0.25,
+    "tm_proxy": 0.01039613555899352
+  },
+  "1aho": {
+    "rmsd_unaligned": 8.242197036743164,
+    "rmsd_aligned": 12.97821407223976,
+    "pLDDT": 27.126056671142578,
+    "local_lDDT": 26.26767921447754,
+    "contact_f1": 0.6037735802020842,
+    "long_range_precision_L5": 0.08333333333333333,
+    "tm_proxy": 0.07553247690588084
+  },
+  "2ptl": {
+    "rmsd_unaligned": 14.042698860168457,
+    "rmsd_aligned": 22.705697836103845,
+    "pLDDT": 44.55364227294922,
+    "local_lDDT": 53.00809860229492,
+    "contact_f1": 0.74876846791332,
+    "long_range_precision_L5": 0.4166666666666667,
+    "tm_proxy": 0.03591018048261705
+  },
+  "1tig": {
+    "rmsd_unaligned": 12.829275131225586,
+    "rmsd_aligned": 13.296941219680633,
+    "pLDDT": 33.95149230957031,
+    "local_lDDT": 36.34626007080078,
+    "contact_f1": 0.7662650552983598,
+    "long_range_precision_L5": 0.08333333333333333,
+    "tm_proxy": 0.06615203384100593
+  }
+}

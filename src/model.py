@@ -74,11 +74,76 @@ class DistancePredictor(nn.Module):
         return out   # raw logits → caller uses bin_to_dist() or cross-entropy
 
 
-class _PairBiasTransformerLayer(nn.Module):
-    """Single Evoformer-lite layer: single-sequence track + pair bias.
+class TriangleMultiplication(nn.Module):
+    """AlphaFold2-style triangle multiplication for the pair representation.
 
-    The pair bias lets the attention pattern be informed by the current pair
-    representation — a key idea from AlphaFold2's Evoformer.
+    Enforces **geometric transitivity** in the distance prediction:
+    if pair (i,k) and pair (k,j) carry certain structural signals, those are
+    combined and written into pair (i,j) — enabling indirect reasoning like
+    "if i is close to k, and k is close to j, then i should be close to j".
+
+    Two complementary passes (AF2 Supplementary, Algorithms 11 & 12):
+    - **Outgoing** (sharing k between columns):  z_ij += gate ⊙ LN(Σ_k  a_ik ⊙ b_jk)
+    - **Incoming** (sharing k between rows):     z_ij += gate ⊙ LN(Σ_k  a_ki ⊙ b_kj)
+
+    Complexity: O(L² · D) per pass (the einsum collapses over k in O(L) per output cell).
+    For L=60, D=64: ~230K FLOPs per layer — entirely tractable on CPU.
+    """
+    def __init__(self, pair_dim: int, dropout: float = 0.1):
+        super().__init__()
+        d = pair_dim
+        self.norm = nn.LayerNorm(d)
+        # Outgoing triangle
+        self.out_a   = nn.Linear(d, d, bias=False)   # "left edge"
+        self.out_b   = nn.Linear(d, d, bias=False)   # "right edge"
+        self.out_g   = nn.Linear(d, d, bias=False)   # output gate
+        self.out_ln  = nn.LayerNorm(d)
+        self.out_proj= nn.Linear(d, d)
+        # Incoming triangle
+        self.in_a    = nn.Linear(d, d, bias=False)
+        self.in_b    = nn.Linear(d, d, bias=False)
+        self.in_g    = nn.Linear(d, d, bias=False)
+        self.in_ln   = nn.LayerNorm(d)
+        self.in_proj = nn.Linear(d, d)
+        self.drop    = nn.Dropout(dropout)
+
+    def forward(self, z: torch.Tensor) -> torch.Tensor:
+        """z: (B, L, L, pair_dim)  →  updated z (same shape)"""
+        L = z.shape[1]
+        scale = L ** -0.5
+
+        zn = self.norm(z)
+
+        # ── Outgoing: z_ij += gate * proj(LN(Σ_k a_ik ⊙ b_jk)) ──────────────
+        a_o = torch.sigmoid(self.out_a(zn)) * zn       # gated; (B, L, L, D)
+        b_o = self.out_b(zn)                            # (B, L, L, D)
+        g_o = torch.sigmoid(self.out_g(zn))             # output gate
+        # einsum: for each (i,j) sum over k: a[b,i,k,d] * b[b,j,k,d]
+        tri_o = torch.einsum('bikd,bjkd->bijd', a_o, b_o) * scale
+        z = z + self.drop(g_o * self.out_proj(self.out_ln(tri_o)))
+
+        # ── Incoming: z_ij += gate * proj(LN(Σ_k a_ki ⊙ b_kj)) ──────────────
+        zn = self.norm(z)          # re-normalise after outgoing update
+        a_i = torch.sigmoid(self.in_a(zn)) * zn
+        b_i = self.in_b(zn)
+        g_i = torch.sigmoid(self.in_g(zn))
+        # einsum: for each (i,j) sum over k: a[b,k,i,d] * b[b,k,j,d]
+        tri_i = torch.einsum('bkid,bkjd->bijd', a_i, b_i) * scale
+        z = z + self.drop(g_i * self.in_proj(self.in_ln(tri_i)))
+
+        return z
+
+
+class _PairBiasTransformerLayer(nn.Module):
+    """Single Evoformer-lite layer: single-sequence track + pair bias + triangle multiplication.
+
+    Combines three AF2 Evoformer ideas in one layer:
+    1. **Pair-biased attention**: pair(i,j) biases residue-track attention — coupling
+       the sequence track to the pair track at every layer.
+    2. **Outer-product pair update**: sequence-track embeddings h_i, h_j update pair(i,j)
+       via a learned linear on [h_i ‖ h_j] — allowing sequence context to flow into pairs.
+    3. **Triangle multiplication** (NEW): each pair(i,j) aggregates over all intermediate
+       residues k, enforcing geometric transitivity (Algorithm 11/12 in AF2 Methods).
 
     Uses manual scaled dot-product attention so the (B, nhead, L, L) pair bias
     is added *per sample per head* without any batch averaging.
@@ -106,7 +171,7 @@ class _PairBiasTransformerLayer(nn.Module):
             nn.Linear(hidden * 4, hidden),
             nn.Dropout(dropout),
         )
-        # Pair update: outer-product mean (simplified triangle update)
+        # Pair update 1: outer-product mean from sequence track
         self.pair_update = nn.Sequential(
             nn.LayerNorm(pair_dim),
             nn.Linear(pair_dim, pair_dim),
@@ -114,6 +179,8 @@ class _PairBiasTransformerLayer(nn.Module):
             nn.Linear(pair_dim, pair_dim),
         )
         self.outer_proj = nn.Linear(hidden * 2, pair_dim)
+        # Pair update 2: triangle multiplication (geometric transitivity)
+        self.triangle_mul = TriangleMultiplication(pair_dim, dropout=dropout)
 
     def forward(self, seq, pair):
         """
@@ -147,11 +214,15 @@ class _PairBiasTransformerLayer(nn.Module):
         seq = seq + out
         seq = seq + self.ff(seq)
 
-        # Update pair representation with outer-product mean
+        # Pair update 1: outer-product mean from sequence track
         h_i = seq.unsqueeze(2).expand(B, L, L, -1)
         h_j = seq.unsqueeze(1).expand(B, L, L, -1)
         outer = self.outer_proj(torch.cat([h_i, h_j], dim=-1))
         pair = pair + self.pair_update(outer)
+
+        # Pair update 2: triangle multiplication (geometric transitivity)
+        pair = self.triangle_mul(pair)
+
         return seq, pair
 
 
@@ -386,10 +457,13 @@ def distogram_loss(logits, true_dists, backbone_weight: float = 1.0):
     return (loss_per * weight_flat).mean()
 
 
-def _contact_bce_loss(logits_or_dists, true_dists, threshold=8.0, is_logits=True):
-    """Binary contact BCE loss.
+def _contact_bce_loss(logits_or_dists, true_dists, threshold=8.0, is_logits=True,
+                      lr_weight=1.0, lr_sep=12):
+    """Binary contact BCE loss with optional long-range upweighting.
 
     If *is_logits* is True, convert distogram logits to expected distances first.
+    *lr_weight*: multiplier applied to pairs where |i-j| >= lr_sep (default 12).
+                 Set > 1 to force the model to rank long-range contacts higher.
     """
     if is_logits:
         pred_dists = bin_to_dist(logits_or_dists)   # (B,L,L)
@@ -398,17 +472,25 @@ def _contact_bce_loss(logits_or_dists, true_dists, threshold=8.0, is_logits=True
     pred_contact = torch.sigmoid((threshold - pred_dists) / 2.0)
     true_contact = (true_dists < threshold).float()
     L = pred_dists.shape[-1]
-    mask = 1.0 - torch.eye(L, device=pred_dists.device).unsqueeze(0)
-    loss = nn.functional.binary_cross_entropy(
-        pred_contact * mask, true_contact * mask, reduction='sum'
-    ) / (mask.sum() + 1e-8)
+
+    # Per-pair weight: zero on diagonal, upweight long-range pairs
+    idx = torch.arange(L, device=pred_dists.device)
+    sep = (idx.unsqueeze(0) - idx.unsqueeze(1)).abs()     # (L, L)
+    diag_mask = (sep > 0).float()                          # exclude self-pairs
+    lr_mask   = (sep >= lr_sep).float()                    # long-range indicator
+    weight    = diag_mask * (1.0 + (lr_weight - 1.0) * lr_mask)  # (L, L)
+
+    bce = nn.functional.binary_cross_entropy(
+        pred_contact, true_contact, reduction='none'        # (B, L, L)
+    )
+    loss = (bce * weight.unsqueeze(0)).sum() / (weight.sum() + 1e-8)
     return loss
 
 
 # ── Training ──────────────────────────────────────────────────────────────────
 
 def train_epoch(model, X, Y, optimizer, device='cpu', contact_weight=0.5,
-                ss_weight=0.2, plddt_weight=0.1):
+                ss_weight=0.2, plddt_weight=0.1, lr_weight=1.0, lr_sep=12):
     """One step: distogram CE + contact BCE + (Transformer only) SS + pLDDT aux losses.
 
     For the MLP, only distogram CE and contact BCE are used.
@@ -416,6 +498,7 @@ def train_epoch(model, X, Y, optimizer, device='cpu', contact_weight=0.5,
       - Secondary structure (coil/helix/strand) derived from Cα distance geometry
       - Per-residue pLDDT confidence bins derived from mean absolute distance error
     Both auxiliary losses provide extra gradient signal without requiring external labels.
+    *lr_weight*: upweight long-range contacts (|i-j| >= lr_sep) in the BCE loss.
     """
     model.train()
     model.to(device)
@@ -431,7 +514,8 @@ def train_epoch(model, X, Y, optimizer, device='cpu', contact_weight=0.5,
         logits = model(X_t)                   # (B, L, L, n_bins)
 
     loss_dg = distogram_loss(logits, Y_t)
-    loss_cb = _contact_bce_loss(logits, Y_t, is_logits=True)
+    loss_cb = _contact_bce_loss(logits, Y_t, is_logits=True,
+                                lr_weight=lr_weight, lr_sep=lr_sep)
     loss = loss_dg + contact_weight * loss_cb
 
     if is_transformer:

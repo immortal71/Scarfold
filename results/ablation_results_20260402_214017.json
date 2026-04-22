@@ -1,0 +1,729 @@
+{
+  "variants": {
+    "D_seq_distance": {
+      "0": {
+        "1crn": {
+          "rmsd_unaligned": 11.5868558883667,
+          "rmsd_aligned": 17.280235952764123,
+          "pLDDT": 32.55469512939453,
+          "local_lDDT": 31.834802627563477,
+          "contact_f1": 0.6805970101093339,
+          "long_range_precision_L5": 0.0,
+          "tm_proxy": 0.018324340676118586
+        },
+        "1vii": {
+          "rmsd_unaligned": 5.472111701965332,
+          "rmsd_aligned": 12.214836135455366,
+          "pLDDT": 36.04755401611328,
+          "local_lDDT": 34.73265075683594,
+          "contact_f1": 0.7836734644638069,
+          "long_range_precision_L5": 0.0,
+          "tm_proxy": 0.02060932962327487
+        },
+        "1lyz": {
+          "rmsd_unaligned": 16.256765365600586,
+          "rmsd_aligned": 15.811083259378556,
+          "pLDDT": 30.874778747558594,
+          "local_lDDT": 30.744640350341797,
+          "contact_f1": 0.6636771252564903,
+          "long_range_precision_L5": 0.0,
+          "tm_proxy": 0.03705741023403992
+        },
+        "1trz": {
+          "rmsd_unaligned": 13.11263656616211,
+          "rmsd_aligned": 9.319491894421539,
+          "pLDDT": 44.885589599609375,
+          "local_lDDT": 44.030826568603516,
+          "contact_f1": 0.8091603003041782,
+          "long_range_precision_L5": 0.0,
+          "tm_proxy": 0.005579598169626836
+        },
+        "6gv2": {
+          "rmsd_unaligned": 47.47240447998047,
+          "rmsd_aligned": 16.76676882235638,
+          "pLDDT": 30.19283103942871,
+          "local_lDDT": 29.148807525634766,
+          "contact_f1": 0.7020785171002033,
+          "long_range_precision_L5": 0.0,
+          "tm_proxy": 0.027581179361101812
+        },
+        "6o08": {
+          "rmsd_unaligned": 18.048744201660156,
+          "rmsd_aligned": 19.71319260727979,
+          "pLDDT": 34.019676208496094,
+          "local_lDDT": 33.972450256347656,
+          "contact_f1": 0.6898262977884231,
+          "long_range_precision_L5": 0.0,
+          "tm_proxy": 0.02751125090695955
+        },
+        "7my4": {
+          "rmsd_unaligned": 28.908052444458008,
+          "rmsd_aligned": 16.69501346342962,
+          "pLDDT": 40.19723892211914,
+          "local_lDDT": 47.077491760253906,
+          "contact_f1": 0.8288770003274328,
+          "long_range_precision_L5": 0.0,
+          "tm_proxy": 0.03543032627788352
+        }
+      },
+      "1": {
+        "1crn": {
+          "rmsd_unaligned": 11.5868558883667,
+          "rmsd_aligned": 17.280235952764123,
+          "pLDDT": 32.55469512939453,
+          "local_lDDT": 31.834802627563477,
+          "contact_f1": 0.6805970101093339,
+          "long_range_precision_L5": 0.0,
+          "tm_proxy": 0.018324340676118586
+        },
+        "1vii": {
+          "rmsd_unaligned": 5.472111701965332,
+          "rmsd_aligned": 12.214836135455366,
+          "pLDDT": 36.04755401611328,
+          "local_lDDT": 34.73265075683594,
+          "contact_f1": 0.7836734644638069,
+          "long_range_precision_L5": 0.0,
+          "tm_proxy": 0.02060932962327487
+        },
+        "1lyz": {
+          "rmsd_unaligned": 16.256765365600586,
+          "rmsd_aligned": 15.811083259378556,
+          "pLDDT": 30.874778747558594,
+          "local_lDDT": 30.744640350341797,
+          "contact_f1": 0.6636771252564903,
+          "long_range_precision_L5": 0.0,
+          "tm_proxy": 0.03705741023403992
+        },
+        "1trz": {
+          "rmsd_unaligned": 13.11263656616211,
+          "rmsd_aligned": 9.319491894421539,
+          "pLDDT": 44.885589599609375,
+          "local_lDDT": 44.030826568603516,
+          "contact_f1": 0.8091603003041782,
+          "long_range_precision_L5": 0.0,
+          "tm_proxy": 0.005579598169626836
+        },
+        "6gv2": {
+          "rmsd_unaligned": 47.47240447998047,
+          "rmsd_aligned": 16.76676882235638,
+          "pLDDT": 30.19283103942871,
+          "local_lDDT": 29.148807525634766,
+          "contact_f1": 0.7020785171002033,
+          "long_range_precision_L5": 0.0,
+          "tm_proxy": 0.027581179361101812
+        },
+        "6o08": {
+          "rmsd_unaligned": 18.048744201660156,
+          "rmsd_aligned": 19.71319260727979,
+          "pLDDT": 34.019676208496094,
+          "local_lDDT": 33.972450256347656,
+          "contact_f1": 0.6898262977884231,
+          "long_range_precision_L5": 0.0,
+          "tm_proxy": 0.02751125090695955
+        },
+        "7my4": {
+          "rmsd_unaligned": 28.908052444458008,
+          "rmsd_aligned": 16.69501346342962,
+          "pLDDT": 40.19723892211914,
+          "local_lDDT": 47.077491760253906,
+          "contact_f1": 0.8288770003274328,
+          "long_range_precision_L5": 0.0,
+          "tm_proxy": 0.03543032627788352
+        }
+      },
+      "2": {
+        "1crn": {
+          "rmsd_unaligned": 11.5868558883667,
+          "rmsd_aligned": 17.280235952764123,
+          "pLDDT": 32.55469512939453,
+          "local_lDDT": 31.834802627563477,
+          "contact_f1": 0.6805970101093339,
+          "long_range_precision_L5": 0.0,
+          "tm_proxy": 0.018324340676118586
+        },
+        "1vii": {
+          "rmsd_unaligned": 5.472111701965332,
+          "rmsd_aligned": 12.214836135455366,
+          "pLDDT": 36.04755401611328,
+          "local_lDDT": 34.73265075683594,
+          "contact_f1": 0.7836734644638069,
+          "long_range_precision_L5": 0.0,
+          "tm_proxy": 0.02060932962327487
+        },
+        "1lyz": {
+          "rmsd_unaligned": 16.256765365600586,
+          "rmsd_aligned": 15.811083259378556,
+          "pLDDT": 30.874778747558594,
+          "local_lDDT": 30.744640350341797,
+          "contact_f1": 0.6636771252564903,
+          "long_range_precision_L5": 0.0,
+          "tm_proxy": 0.03705741023403992
+        },
+        "1trz": {
+          "rmsd_unaligned": 13.11263656616211,
+          "rmsd_aligned": 9.319491894421539,
+          "pLDDT": 44.885589599609375,
+          "local_lDDT": 44.030826568603516,
+          "contact_f1": 0.8091603003041782,
+          "long_range_precision_L5": 0.0,
+          "tm_proxy": 0.005579598169626836
+        },
+        "6gv2": {
+          "rmsd_unaligned": 47.47240447998047,
+          "rmsd_aligned": 16.76676882235638,
+          "pLDDT": 30.19283103942871,
+          "local_lDDT": 29.148807525634766,
+          "contact_f1": 0.7020785171002033,
+          "long_range_precision_L5": 0.0,
+          "tm_proxy": 0.027581179361101812
+        },
+        "6o08": {
+          "rmsd_unaligned": 18.048744201660156,
+          "rmsd_aligned": 19.71319260727979,
+          "pLDDT": 34.019676208496094,
+          "local_lDDT": 33.972450256347656,
+          "contact_f1": 0.6898262977884231,
+          "long_range_precision_L5": 0.0,
+          "tm_proxy": 0.02751125090695955
+        },
+        "7my4": {
+          "rmsd_unaligned": 28.908052444458008,
+          "rmsd_aligned": 16.69501346342962,
+          "pLDDT": 40.19723892211914,
+          "local_lDDT": 47.077491760253906,
+          "contact_f1": 0.8288770003274328,
+          "long_range_precision_L5": 0.0,
+          "tm_proxy": 0.03543032627788352
+        }
+      }
+    },
+    "A_seq_only": {
+      "0": {
+        "1crn": {
+          "rmsd_unaligned": 10.599790573120117,
+          "rmsd_aligned": 9.861986778017075,
+          "pLDDT": 16.233644485473633,
+          "local_lDDT": 25.37413215637207,
+          "contact_f1": 0.0,
+          "long_range_precision_L5": 0.1111111111111111,
+          "tm_proxy": 0.07384367725875736
+        },
+        "1vii": {
+          "rmsd_unaligned": 5.430713653564453,
+          "rmsd_aligned": 8.956800999408475,
+          "pLDDT": 18.028949737548828,
+          "local_lDDT": 25.60817527770996,
+          "contact_f1": 0.0,
+          "long_range_precision_L5": 0.0,
+          "tm_proxy": 0.044896862575575056
+        },
+        "1lyz": {
+          "rmsd_unaligned": 16.47713279724121,
+          "rmsd_aligned": 12.25297283302492,
+          "pLDDT": 15.875428199768066,
+          "local_lDDT": 26.143413543701172,
+          "contact_f1": 0.0,
+          "long_range_precision_L5": 0.0,
+          "tm_proxy": 0.08715219468984567
+        },
+        "1trz": {
+          "rmsd_unaligned": 12.258465766906738,
+          "rmsd_aligned": 7.604945889567769,
+          "pLDDT": 18.9924259185791,
+          "local_lDDT": 21.23046112060547,
+          "contact_f1": 0.0,
+          "long_range_precision_L5": 0.0,
+          "tm_proxy": 0.008265031274638
+        },
+        "6gv2": {
+          "rmsd_unaligned": 46.6501579284668,
+          "rmsd_aligned": 11.929205911386555,
+          "pLDDT": 17.431739807128906,
+          "local_lDDT": 30.774635314941406,
+          "contact_f1": 0.0,
+          "long_range_precision_L5": 0.0,
+          "tm_proxy": 0.07388869028964498
+        },
+        "6o08": {
+          "rmsd_unaligned": 17.95844268798828,
+          "rmsd_aligned": 14.348662892050378,
+          "pLDDT": 17.214611053466797,
+          "local_lDDT": 27.387004852294922,
+          "contact_f1": 0.0,
+          "long_range_precision_L5": 0.0,
+          "tm_proxy": 0.0584905244797058
+        },
+        "7my4": {
+          "rmsd_unaligned": 28.858081817626953,
+          "rmsd_aligned": 14.964073361776535,
+          "pLDDT": 17.3089542388916,
+          "local_lDDT": 25.196910858154297,
+          "contact_f1": 0.0,
+          "long_range_precision_L5": 0.0,
+          "tm_proxy": 0.06399521538450828
+        }
+      },
+      "1": {
+        "1crn": {
+          "rmsd_unaligned": 10.641849517822266,
+          "rmsd_aligned": 10.145354763299357,
+          "pLDDT": 16.329397201538086,
+          "local_lDDT": 25.864351272583008,
+          "contact_f1": 0.0,
+          "long_range_precision_L5": 0.0,
+          "tm_proxy": 0.058715592259109294
+        },
+        "1vii": {
+          "rmsd_unaligned": 5.400484561920166,
+          "rmsd_aligned": 9.285692965919518,
+          "pLDDT": 18.135589599609375,
+          "local_lDDT": 25.978710174560547,
+          "contact_f1": 0.0,
+          "long_range_precision_L5": 0.0,
+          "tm_proxy": 0.04236639180513885
+        },
+        "1lyz": {
+          "rmsd_unaligned": 16.460412979125977,
+          "rmsd_aligned": 12.005017631812384,
+          "pLDDT": 15.956453323364258,
+          "local_lDDT": 26.638349533081055,
+          "contact_f1": 0.0,
+          "long_range_precision_L5": 0.0,
+          "tm_proxy": 0.08106155825619042
+        },
+        "1trz": {
+          "rmsd_unaligned": 12.126083374023438,
+          "rmsd_aligned": 7.634455063372897,
+          "pLDDT": 19.08164405822754,
+          "local_lDDT": 21.488807678222656,
+          "contact_f1": 0.0,
+          "long_range_precision_L5": 0.0,
+          "tm_proxy": 0.006963694601625411
+        },
+        "6gv2": {
+          "rmsd_unaligned": 46.59796905517578,
+          "rmsd_aligned": 11.368532493499275,
+          "pLDDT": 17.532445907592773,
+          "local_lDDT": 31.315832138061523,
+          "contact_f1": 0.0,
+          "long_range_precision_L5": 0.08333333333333333,
+          "tm_proxy": 0.07731225940883536
+        },
+        "6o08": {
+          "rmsd_unaligned": 17.956998825073242,
+          "rmsd_aligned": 13.674953720335647,
+          "pLDDT": 17.266571044921875,
+          "local_lDDT": 28.087108612060547,
+          "contact_f1": 0.0,
+          "long_range_precision_L5": 0.0,
+          "tm_proxy": 0.06968150091765671
+        },
+        "7my4": {
+          "rmsd_unaligned": 28.829891204833984,
+          "rmsd_aligned": 15.02630663082779,
+          "pLDDT": 17.336130142211914,
+          "local_lDDT": 25.841617584228516,
+          "contact_f1": 0.0,
+          "long_range_precision_L5": 0.0,
+          "tm_proxy": 0.051831646200594765
+        }
+      },
+      "2": {
+        "1crn": {
+          "rmsd_unaligned": 10.722578048706055,
+          "rmsd_aligned": 9.962920302595816,
+          "pLDDT": 16.367656707763672,
+          "local_lDDT": 26.035367965698242,
+          "contact_f1": 0.0,
+          "long_range_precision_L5": 0.1111111111111111,
+          "tm_proxy": 0.06757716815683336
+        },
+        "1vii": {
+          "rmsd_unaligned": 5.222614765167236,
+          "rmsd_aligned": 9.170069248589353,
+          "pLDDT": 18.179161071777344,
+          "local_lDDT": 26.242708206176758,
+          "contact_f1": 0.0,
+          "long_range_precision_L5": 0.0,
+          "tm_proxy": 0.04364307701189915
+        },
+        "1lyz": {
+          "rmsd_unaligned": 16.494524002075195,
+          "rmsd_aligned": 12.32130493237456,
+          "pLDDT": 15.989774703979492,
+          "local_lDDT": 26.814115524291992,
+          "contact_f1": 0.0,
+          "long_range_precision_L5": 0.0,
+          "tm_proxy": 0.08580027420058743
+        },
+        "1trz": {
+          "rmsd_unaligned": 12.376246452331543,
+          "rmsd_aligned": 7.537168002553574,
+          "pLDDT": 19.11798095703125,
+          "local_lDDT": 21.61760139465332,
+          "contact_f1": 0.0,
+          "long_range_precision_L5": 0.0,
+          "tm_proxy": 0.006837415633335094
+        },
+        "6gv2": {
+          "rmsd_unaligned": 46.66877365112305,
+          "rmsd_aligned": 11.37043905344486,
+          "pLDDT": 17.57438850402832,
+          "local_lDDT": 31.4118595123291,
+          "contact_f1": 0.0,
+          "long_range_precision_L5": 0.0,
+          "tm_proxy": 0.08480372118678159
+        },
+        "6o08": {
+          "rmsd_unaligned": 17.943500518798828,
+          "rmsd_aligned": 13.675065365273008,
+          "pLDDT": 17.2877254486084,
+          "local_lDDT": 28.349824905395508,
+          "contact_f1": 0.0,
+          "long_range_precision_L5": 0.0,
+          "tm_proxy": 0.07054845324050962
+        },
+        "7my4": {
+          "rmsd_unaligned": 28.758058547973633,
+          "rmsd_aligned": 15.3632000105049,
+          "pLDDT": 17.347389221191406,
+          "local_lDDT": 25.980976104736328,
+          "contact_f1": 0.0,
+          "long_range_precision_L5": 0.0,
+          "tm_proxy": 0.057586946628881704
+        }
+      }
+    },
+    "B_evoformer_no_trimul": {
+      "0": {
+        "1crn": {
+          "rmsd_unaligned": 12.627754211425781,
+          "rmsd_aligned": 16.085796027683244,
+          "pLDDT": 35.338600158691406,
+          "local_lDDT": 36.90080642700195,
+          "contact_f1": 0.7331536338189929,
+          "long_range_precision_L5": 0.0,
+          "tm_proxy": 0.019865930281489003
+        },
+        "1vii": {
+          "rmsd_unaligned": 8.055266380310059,
+          "rmsd_aligned": 5.999065749781559,
+          "pLDDT": 38.74309539794922,
+          "local_lDDT": 40.21546936035156,
+          "contact_f1": 0.8613138635598595,
+          "long_range_precision_L5": 0.0,
+          "tm_proxy": 0.12623067111079495
+        },
+        "1lyz": {
+          "rmsd_unaligned": 18.49823570251465,
+          "rmsd_aligned": 7.749886841187505,
+          "pLDDT": 33.30121994018555,
+          "local_lDDT": 35.799598693847656,
+          "contact_f1": 0.7154471494983146,
+          "long_range_precision_L5": 0.0,
+          "tm_proxy": 0.162496438794684
+        },
+        "1trz": {
+          "rmsd_unaligned": 13.48006534576416,
+          "rmsd_aligned": 8.505924656076305,
+          "pLDDT": 48.031951904296875,
+          "local_lDDT": 47.23445129394531,
+          "contact_f1": 0.855172408677289,
+          "long_range_precision_L5": 0.0,
+          "tm_proxy": 0.00918948428631559
+        },
+        "6gv2": {
+          "rmsd_unaligned": 46.64752960205078,
+          "rmsd_aligned": 14.049705234877646,
+          "pLDDT": 32.194602966308594,
+          "local_lDDT": 33.95487976074219,
+          "contact_f1": 0.730688930284474,
+          "long_range_precision_L5": 0.0,
+          "tm_proxy": 0.07426402057321556
+        },
+        "6o08": {
+          "rmsd_unaligned": 19.297786712646484,
+          "rmsd_aligned": 12.162370529528017,
+          "pLDDT": 35.171348571777344,
+          "local_lDDT": 37.02119445800781,
+          "contact_f1": 0.6681514426337171,
+          "long_range_precision_L5": 0.08333333333333333,
+          "tm_proxy": 0.08690413791509291
+        },
+        "7my4": {
+          "rmsd_unaligned": 29.42035675048828,
+          "rmsd_aligned": 15.214081095522904,
+          "pLDDT": 42.43931579589844,
+          "local_lDDT": 53.17394256591797,
+          "contact_f1": 0.8809523759217687,
+          "long_range_precision_L5": 0.0,
+          "tm_proxy": 0.1018475918739099
+        }
+      },
+      "1": {
+        "1crn": {
+          "rmsd_unaligned": 11.442190170288086,
+          "rmsd_aligned": 16.561028506164575,
+          "pLDDT": 32.60486602783203,
+          "local_lDDT": 32.9278678894043,
+          "contact_f1": 0.6805970101093339,
+          "long_range_precision_L5": 0.0,
+          "tm_proxy": 0.021554371149703044
+        },
+        "1vii": {
+          "rmsd_unaligned": 5.569667339324951,
+          "rmsd_aligned": 12.451559625628,
+          "pLDDT": 35.711181640625,
+          "local_lDDT": 35.37599563598633,
+          "contact_f1": 0.7836734644638069,
+          "long_range_precision_L5": 0.14285714285714285,
+          "tm_proxy": 0.02055119527084459
+        },
+        "1lyz": {
+          "rmsd_unaligned": 16.108692169189453,
+          "rmsd_aligned": 12.871380703379447,
+          "pLDDT": 30.71510124206543,
+          "local_lDDT": 32.12250518798828,
+          "contact_f1": 0.6636771252564903,
+          "long_range_precision_L5": 0.0,
+          "tm_proxy": 0.07202623980102918
+        },
+        "1trz": {
+          "rmsd_unaligned": 13.16048526763916,
+          "rmsd_aligned": 8.365327662711241,
+          "pLDDT": 44.72510528564453,
+          "local_lDDT": 43.391082763671875,
+          "contact_f1": 0.8091603003041782,
+          "long_range_precision_L5": 0.0,
+          "tm_proxy": 0.008224183047746279
+        },
+        "6gv2": {
+          "rmsd_unaligned": 47.34695053100586,
+          "rmsd_aligned": 10.993398922711291,
+          "pLDDT": 30.890560150146484,
+          "local_lDDT": 31.36896324157715,
+          "contact_f1": 0.7020785171002033,
+          "long_range_precision_L5": 0.0,
+          "tm_proxy": 0.09461235410345065
+        },
+        "6o08": {
+          "rmsd_unaligned": 18.112245559692383,
+          "rmsd_aligned": 12.141303272422064,
+          "pLDDT": 34.333946228027344,
+          "local_lDDT": 35.760494232177734,
+          "contact_f1": 0.6898262977884231,
+          "long_range_precision_L5": 0.0,
+          "tm_proxy": 0.07171891397334049
+        },
+        "7my4": {
+          "rmsd_unaligned": 29.227901458740234,
+          "rmsd_aligned": 16.55135233818628,
+          "pLDDT": 39.0955696105957,
+          "local_lDDT": 46.83341979980469,
+          "contact_f1": 0.8288770003274328,
+          "long_range_precision_L5": 0.0,
+          "tm_proxy": 0.07544998983784115
+        }
+      },
+      "2": {
+        "1crn": {
+          "rmsd_unaligned": 12.761635780334473,
+          "rmsd_aligned": 16.084607487419937,
+          "pLDDT": 35.413917541503906,
+          "local_lDDT": 34.840248107910156,
+          "contact_f1": 0.7214854061318943,
+          "long_range_precision_L5": 0.0,
+          "tm_proxy": 0.019832171216348296
+        },
+        "1vii": {
+          "rmsd_unaligned": 5.451637268066406,
+          "rmsd_aligned": 12.00264862779192,
+          "pLDDT": 38.94450378417969,
+          "local_lDDT": 38.67891311645508,
+          "contact_f1": 0.8664259877225039,
+          "long_range_precision_L5": 0.0,
+          "tm_proxy": 0.022763822295269236
+        },
+        "1lyz": {
+          "rmsd_unaligned": 16.17062759399414,
+          "rmsd_aligned": 13.069846434195187,
+          "pLDDT": 33.09658432006836,
+          "local_lDDT": 33.574928283691406,
+          "contact_f1": 0.7091633416202917,
+          "long_range_precision_L5": 0.0,
+          "tm_proxy": 0.06890070583790528
+        },
+        "1trz": {
+          "rmsd_unaligned": 12.833504676818848,
+          "rmsd_aligned": 8.960307930845662,
+          "pLDDT": 50.68880081176758,
+          "local_lDDT": 47.666534423828125,
+          "contact_f1": 0.8783783732596787,
+          "long_range_precision_L5": 0.0,
+          "tm_proxy": 0.006985184221326403
+        },
+        "6gv2": {
+          "rmsd_unaligned": 47.36727523803711,
+          "rmsd_aligned": 10.75684274703064,
+          "pLDDT": 32.1986198425293,
+          "local_lDDT": 31.090599060058594,
+          "contact_f1": 0.7321063344559449,
+          "long_range_precision_L5": 0.0,
+          "tm_proxy": 0.09127555723657964
+        },
+        "6o08": {
+          "rmsd_unaligned": 18.15384292602539,
+          "rmsd_aligned": 12.09709265346157,
+          "pLDDT": 34.31565856933594,
+          "local_lDDT": 33.95100021362305,
+          "contact_f1": 0.6710239601123974,
+          "long_range_precision_L5": 0.0,
+          "tm_proxy": 0.07161867868602091
+        },
+        "7my4": {
+          "rmsd_unaligned": 29.280345916748047,
+          "rmsd_aligned": 16.318842103409043,
+          "pLDDT": 42.595970153808594,
+          "local_lDDT": 49.743568420410156,
+          "contact_f1": 0.879069762425311,
+          "long_range_precision_L5": 0.0,
+          "tm_proxy": 0.061406636524850865
+        }
+      }
+    }
+  },
+  "summary": [
+    {
+      "variant": "D_seq_distance",
+      "label": "D: Seq-dist baseline (no learning)",
+      "metric": "local_lDDT",
+      "mean": 35.93452426365444,
+      "std": 0.0,
+      "n_seeds": 1,
+      "epochs": 0,
+      "n_train_proteins": 0,
+      "seed_values": "35.9345"
+    },
+    {
+      "variant": "D_seq_distance",
+      "label": "D: Seq-dist baseline (no learning)",
+      "metric": "contact_f1",
+      "mean": 0.7368413879071241,
+      "std": 0.0,
+      "n_seeds": 1,
+      "epochs": 0,
+      "n_train_proteins": 0,
+      "seed_values": "0.7368"
+    },
+    {
+      "variant": "D_seq_distance",
+      "label": "D: Seq-dist baseline (no learning)",
+      "metric": "long_range_precision_L5",
+      "mean": 0.0,
+      "std": 0.0,
+      "n_seeds": 1,
+      "epochs": 0,
+      "n_train_proteins": 0,
+      "seed_values": "0.0000"
+    },
+    {
+      "variant": "D_seq_distance",
+      "label": "D: Seq-dist baseline (no learning)",
+      "metric": "tm_proxy",
+      "mean": 0.02458477646414358,
+      "std": 0.0,
+      "n_seeds": 1,
+      "epochs": 0,
+      "n_train_proteins": 0,
+      "seed_values": "0.0246"
+    },
+    {
+      "variant": "A_seq_only",
+      "label": "A: Seq-only Transformer (no pair track)",
+      "metric": "local_lDDT",
+      "mean": 26.351522082374206,
+      "std": 0.286618196893461,
+      "n_seeds": 3,
+      "epochs": 30,
+      "n_train_proteins": 20,
+      "seed_values": "25.9592,26.4593,26.6361"
+    },
+    {
+      "variant": "A_seq_only",
+      "label": "A: Seq-only Transformer (no pair track)",
+      "metric": "contact_f1",
+      "mean": 0.0,
+      "std": 0.0,
+      "n_seeds": 3,
+      "epochs": 30,
+      "n_train_proteins": 20,
+      "seed_values": "0.0000,0.0000,0.0000"
+    },
+    {
+      "variant": "A_seq_only",
+      "label": "A: Seq-only Transformer (no pair track)",
+      "metric": "long_range_precision_L5",
+      "mean": 0.01455026455026455,
+      "std": 0.0018706528602818716,
+      "n_seeds": 3,
+      "epochs": 30,
+      "n_train_proteins": 20,
+      "seed_values": "0.0159,0.0119,0.0159"
+    },
+    {
+      "variant": "A_seq_only",
+      "label": "A: Seq-only Transformer (no pair track)",
+      "metric": "tm_proxy",
+      "mean": 0.05786961406955495,
+      "std": 0.001770982125520647,
+      "n_seeds": 3,
+      "epochs": 30,
+      "n_train_proteins": 20,
+      "seed_values": "0.0586,0.0554,0.0595"
+    },
+    {
+      "variant": "B_evoformer_no_trimul",
+      "label": "B: Evoformer (no TriMul)",
+      "metric": "local_lDDT",
+      "mean": 38.64887918744768,
+      "std": 1.5499499094906897,
+      "n_seeds": 3,
+      "epochs": 30,
+      "n_train_proteins": 20,
+      "seed_values": "40.6143,36.8258,38.5065"
+    },
+    {
+      "variant": "B_evoformer_no_trimul",
+      "label": "B: Evoformer (no TriMul)",
+      "metric": "contact_f1",
+      "mean": 0.7647820326415383,
+      "std": 0.019771059047387046,
+      "n_seeds": 3,
+      "epochs": 30,
+      "n_train_proteins": 20,
+      "seed_values": "0.7778,0.7368,0.7797"
+    },
+    {
+      "variant": "B_evoformer_no_trimul",
+      "label": "B: Evoformer (no TriMul)",
+      "metric": "long_range_precision_L5",
+      "mean": 0.010770975056689341,
+      "std": 0.008370081099905556,
+      "n_seeds": 3,
+      "epochs": 30,
+      "n_train_proteins": 20,
+      "seed_values": "0.0119,0.0204,0.0000"
+    },
+    {
+      "variant": "B_evoformer_no_trimul",
+      "label": "B: Evoformer (no TriMul)",
+      "metric": "tm_proxy",
+      "mean": 0.061319918001798,
+      "std": 0.015360328380857529,
+      "n_seeds": 3,
+      "epochs": 30,
+      "n_train_proteins": 20,
+      "seed_values": "0.0830,0.0520,0.0490"
+    }
+  ]
+}

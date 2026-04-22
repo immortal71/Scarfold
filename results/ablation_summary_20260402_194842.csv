@@ -1,0 +1,13 @@
+variant,label,metric,mean,std,n_seeds,epochs,n_train_proteins,seed_values
+A_seq_only,A: Seq-only (no pair track),local_lDDT,30.380125427246092,0.5665355682373043,2,30,20,"30.9467,29.8136"
+A_seq_only,A: Seq-only (no pair track),contact_f1,0.0,0.0,2,30,20,"0.0000,0.0000"
+A_seq_only,A: Seq-only (no pair track),long_range_precision_L5,0.02222222222222222,0.02222222222222222,2,30,20,"0.0444,0.0000"
+A_seq_only,A: Seq-only (no pair track),tm_proxy,0.05344229254656635,0.0019041627550987136,2,30,20,"0.0515,0.0553"
+B_evoformer_no_trimul,B: Evoformer (no TriMul),local_lDDT,43.07220687866211,0.4887580871582031,2,30,20,"43.5610,42.5834"
+B_evoformer_no_trimul,B: Evoformer (no TriMul),contact_f1,0.7510709147198948,0.027935049941007095,2,30,20,"0.7790,0.7231"
+B_evoformer_no_trimul,B: Evoformer (no TriMul),long_range_precision_L5,0.08095238095238096,0.08095238095238096,2,30,20,"0.0000,0.1619"
+B_evoformer_no_trimul,B: Evoformer (no TriMul),tm_proxy,0.05025914858785349,0.01930934967315567,2,30,20,"0.0696,0.0309"
+C_evoformer_trimul,C: Evoformer + TriMul (ours),local_lDDT,34.97296028137207,0.7373271942138651,2,30,20,"34.2356,35.7103"
+C_evoformer_trimul,C: Evoformer + TriMul (ours),contact_f1,0.7004433937830564,0.012929313655030028,2,30,20,"0.6875,0.7134"
+C_evoformer_trimul,C: Evoformer + TriMul (ours),long_range_precision_L5,0.02222222222222222,0.02222222222222222,2,30,20,"0.0000,0.0444"
+C_evoformer_trimul,C: Evoformer + TriMul (ours),tm_proxy,0.04820402180962087,0.003738109265966596,2,30,20,"0.0445,0.0519"

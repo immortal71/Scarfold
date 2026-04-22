@@ -1,0 +1,9 @@
+{
+  "rmsd_unaligned": 9.822885513305664,
+  "rmsd_aligned": 9.600358844349714,
+  "pLDDT": 18.615848541259766,
+  "local_lDDT": 33.46854019165039,
+  "contact_f1": 0.0,
+  "long_range_precision_L5": 0.125,
+  "tm_proxy": 0.05749128559203851
+}

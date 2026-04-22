@@ -3,3 +3,4 @@ torch
 plotly
 biopython
 scipy
+matplotlib

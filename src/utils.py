@@ -449,7 +449,11 @@ def pdb_ca_coords(pdb_path, chain='A', max_residues=120):
 
 
 def pdb_sequence(pdb_path, chain='A', max_residues=120):
-    """Extract one-letter sequence from PDB CA atoms (residues with C-alpha)."""
+    """Extract one-letter sequence from PDB CA atoms (residues with C-alpha).
+
+    Handles both old BioPython (<1.80, uppercase keys 'ALA') and new BioPython
+    (>=1.80, title-case keys 'Ala') so all residue types are extracted correctly.
+    """
     from Bio.PDB import PDBParser
     from Bio.Data.IUPACData import protein_letters_3to1
     parser = PDBParser(QUIET=True)
@@ -461,11 +465,11 @@ def pdb_sequence(pdb_path, chain='A', max_residues=120):
             break
         if 'CA' not in res:
             continue
-        resname = res.get_resname().strip().upper()
-        try:
-            seq.append(protein_letters_3to1.get(resname, 'A'))
-        except Exception:
-            seq.append('A')
+        resname = res.get_resname().strip()
+        # Try uppercase first (old BioPython), then title-case (new BioPython >=1.80)
+        one_letter = (protein_letters_3to1.get(resname.upper())
+                      or protein_letters_3to1.get(resname.capitalize(), 'A'))
+        seq.append(one_letter)
     return ''.join(seq)
 
 

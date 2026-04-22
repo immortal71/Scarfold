@@ -1,0 +1,35 @@
+{
+  "1aho": {
+    "rmsd_unaligned": 9.105371475219727,
+    "rmsd_aligned": 14.0110895460881,
+    "pLDDT": 27.65825080871582,
+    "local_lDDT": 25.180593490600586,
+    "contact_f1": 0.5919661686856867,
+    "long_range_precision_L5": 0.3333333333333333,
+    "tm_proxy": 0.05108560426761491,
+    "cls": "alpha+beta",
+    "L": 60
+  },
+  "2ptl": {
+    "rmsd_unaligned": 13.831950187683105,
+    "rmsd_aligned": 18.815483468241766,
+    "pLDDT": 39.33476257324219,
+    "local_lDDT": 41.60480880737305,
+    "contact_f1": 0.7222222172592083,
+    "long_range_precision_L5": 0.0,
+    "tm_proxy": 0.049580694841583665,
+    "cls": "alpha+beta",
+    "L": 60
+  },
+  "1tig": {
+    "rmsd_unaligned": 13.533648490905762,
+    "rmsd_aligned": 9.203573486281533,
+    "pLDDT": 30.987201690673828,
+    "local_lDDT": 30.965618133544922,
+    "contact_f1": 0.7317073121518144,
+    "long_range_precision_L5": 0.0,
+    "tm_proxy": 0.16646195501694006,
+    "cls": "alpha+beta",
+    "L": 60
+  }
+}
