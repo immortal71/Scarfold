@@ -46,7 +46,7 @@ def evaluate_model(model, seq, true_coords, pssm_path=None):
     pred_dist = 0.5 * (pred_dist + pred_dist.T)
 
     # ── reconstruct coordinates with gradient MDS ─────────────────────────────
-    pred_coords = utils.gradient_mds(pred_dist, dim=3, n_iter=300)
+    pred_coords = utils.gradient_mds(pred_dist, dim=3, n_iter=600)
     N = min(pred_coords.shape[0], true_coords.shape[0])
     rmsd_aligned, aligned_pred = utils.rmsd_kabsch(pred_coords[:N], true_coords[:N])
     rmsd_unaligned = float(np.sqrt(np.mean((pred_coords[:N] - true_coords[:N]) ** 2)))

@@ -1,116 +1,121 @@
 """esm_utils.py — ESM-2 per-residue embeddings as drop-in feature extractor.
 
-Uses Meta's ESM-2 protein language model (esm2_t6_8M_UR50D, 8M params, 320-dim)
-to produce per-residue embeddings from a single amino-acid sequence with no MSA
-required.  The embeddings encode evolutionary signal distilled from 250M sequences,
-providing the model with implicit co-variation information that is the the largest
-single gap between our hand-crafted features and AlphaFold-style representations.
+Uses Meta's ESM-2 protein language model to produce per-residue embeddings from
+a single amino-acid sequence with no MSA required.  The embeddings encode
+evolutionary signal distilled from 250M sequences, providing the model with
+implicit co-variation information.
 
-Combined with the existing 48-dim rich encoding (one-hot + BLOSUM62 + physicochemical),
-the total input feature dimension becomes 368—dim (ESM_RICH_DIM).
+Two model tiers are supported:
+    esm2_t6_8M_UR50D   — 8 M params,  6 layers,  320-dim  (fast, default)
+    esm2_t12_35M_UR50D — 35 M params, 12 layers, 480-dim  (accurate, ESM_MODEL=35M)
+
+The larger 35M model substantially improves long-range contact and TM-score
+because more layers = richer residue-residue context captured by the LM.
+
+Set via environment variable or function argument:
+    import os; os.environ['ESM_MODEL'] = '35M'  # before first call
+    esm2_rich_encoding(seq, model_size='35M')
+
+Combined with the existing 48-dim rich encoding:
+    ESM_RICH_DIM_8M  = 320 + 48 = 368
+    ESM_RICH_DIM_35M = 480 + 48 = 528
 
 Install the ESM library:
     pip install fair-esm
-
-Or the model will attempt a torch.hub download automatically.
-
-Typical usage (drop-in replacement for utils.rich_encoding):
-    from src.esm_utils import esm2_rich_encoding, ESM_RICH_DIM
-    features = esm2_rich_encoding(sequence)   # (L, 368) float32 numpy array
 """
 
+import os
 import numpy as np
 import torch
 
-# Output dimension of esm2_t6_8M_UR50D (6-layer, 320-dim)
-ESM_DIM = 320
+# Model configs: (hub_name, n_layers, embed_dim)
+_ESM_CONFIGS = {
+    '8M':  ('esm2_t6_8M_UR50D',   6,  320),
+    '35M': ('esm2_t12_35M_UR50D', 12, 480),
+}
 
-# Combined ESM-2 + rich-encoding dimension
-ESM_RICH_DIM = ESM_DIM + 48   # 368
+# Default model size (override with ESM_MODEL env var)
+_DEFAULT_SIZE = os.environ.get('ESM_MODEL', '8M')
 
-# Module-level singletons — lazy-loaded on first call
-_ESM_MODEL = None
-_ESM_ALPHABET = None
-_ESM_BATCH_CONVERTER = None
+# Output dimension shortcuts
+ESM_DIM      = 320            # default 8M model
+ESM_DIM_35M  = 480            # 35M model
+ESM_RICH_DIM = ESM_DIM + 48   # 368  (default)
+
+# Module-level singletons — lazy-loaded on first call, keyed by model size
+_ESM_MODELS    = {}
+_ESM_ALPHABETS = {}
+_ESM_BATCH_CONVERTERS = {}
 
 
-def _load_esm() -> None:
-    """Load ESM-2 weights once and cache them.  Tries `fair-esm` pip package
-    first; falls back to torch.hub (requires internet on first run)."""
-    global _ESM_MODEL, _ESM_ALPHABET, _ESM_BATCH_CONVERTER
-    if _ESM_MODEL is not None:
+def _load_esm(model_size: str = _DEFAULT_SIZE) -> None:
+    """Load ESM-2 weights once and cache them by model_size ('8M' or '35M')."""
+    if model_size in _ESM_MODELS:
         return
+
+    hub_name, n_layers, embed_dim = _ESM_CONFIGS[model_size]
 
     try:
         import esm as esm_lib  # pip install fair-esm
-        _ESM_MODEL, _ESM_ALPHABET = esm_lib.pretrained.esm2_t6_8M_UR50D()
+        load_fn = getattr(esm_lib.pretrained, hub_name)
+        _model, _alphabet = load_fn()
     except (ImportError, AttributeError):
-        # Fallback: download via PyTorch Hub (cached after first run)
-        print("  [esm_utils] 'fair-esm' not installed — loading via torch.hub ...")
-        _ESM_MODEL, _ESM_ALPHABET = torch.hub.load(
+        print(f"  [esm_utils] 'fair-esm' not installed — loading {hub_name} via torch.hub ...")
+        _model, _alphabet = torch.hub.load(
             "facebookresearch/esm:main",
-            "esm2_t6_8M_UR50D",
+            hub_name,
             verbose=False,
         )
 
-    _ESM_MODEL.eval()
-    for param in _ESM_MODEL.parameters():
-        param.requires_grad_(False)   # freeze — feature extractor only
+    _model.eval()
+    for param in _model.parameters():
+        param.requires_grad_(False)
 
-    _ESM_BATCH_CONVERTER = _ESM_ALPHABET.get_batch_converter()
-    print(f"  [esm_utils] ESM-2 (esm2_t6_8M_UR50D, {ESM_DIM}-dim) loaded.")
+    _ESM_MODELS[model_size]            = _model
+    _ESM_ALPHABETS[model_size]         = _alphabet
+    _ESM_BATCH_CONVERTERS[model_size]  = _alphabet.get_batch_converter()
+    print(f"  [esm_utils] ESM-2 ({hub_name}, {embed_dim}-dim) loaded.")
 
 
-def esm2_encoding(seq: str) -> np.ndarray:
-    """Return (L, 320) ESM-2 per-residue embeddings for a single sequence.
+def esm2_encoding(seq: str, model_size: str = _DEFAULT_SIZE) -> np.ndarray:
+    """Return (L, D) ESM-2 per-residue embeddings.
 
-    The ESM-2 model is loaded lazily on the first call and cached for all
-    subsequent calls in the same process.
-
-    Args:
-        seq: Amino-acid sequence string (single-letter codes, A-Z).
-
-    Returns:
-        float32 numpy array of shape (L, 320).
+    D = 320 for model_size='8M', 480 for model_size='35M'.
     """
-    _load_esm()
+    _load_esm(model_size)
+    _, n_layers, _ = _ESM_CONFIGS[model_size]
+
+    batch_converter = _ESM_BATCH_CONVERTERS[model_size]
+    model           = _ESM_MODELS[model_size]
 
     data = [("protein", seq)]
-    _, _, tokens = _ESM_BATCH_CONVERTER(data)
+    _, _, tokens = batch_converter(data)
 
     with torch.no_grad():
-        results = _ESM_MODEL(tokens, repr_layers=[6], return_contacts=False)
+        results = model(tokens, repr_layers=[n_layers], return_contacts=False)
 
-    # Layer-6 representations: shape (1, L+2, 320) — strip <cls> and <eos> tokens
-    embs = results["representations"][6][0, 1 : len(seq) + 1].cpu().numpy()
-    return embs.astype(np.float32)   # (L, 320)
+    embs = results["representations"][n_layers][0, 1: len(seq) + 1].cpu().numpy()
+    return embs.astype(np.float32)
 
 
-def esm2_rich_encoding(seq: str) -> np.ndarray:
-    """Return (L, 368) combined features: ESM-2 (320) + rich encoding (48).
+def esm2_rich_encoding(seq: str, model_size: str = _DEFAULT_SIZE) -> np.ndarray:
+    """Return (L, D+48) combined features: ESM-2 + rich encoding.
 
-    Concatenating ESM-2 embeddings with hand-crafted physicochemical features
-    gives the model:
-    - Implicit evolutionary co-variation (from the LM's 250M-sequence training)
-    - Explicit biochemical properties (hydrophobicity, charge, etc.)
-
-    This is complementary: the LM captures what evolution considers equivalent,
-    the physicochemical features capture why two residues might be structurally
-    similar without their being evolutionarily related.
-
-    Args:
-        seq: Amino-acid sequence string.
-
-    Returns:
-        float32 numpy array of shape (L, 368).
+    D+48 = 368 for model_size='8M', 528 for model_size='35M'.
     """
-    import sys, os
-    sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+    import sys, os as _os
+    sys.path.insert(0, _os.path.abspath(_os.path.join(_os.path.dirname(__file__), '..')))
     from src.utils import rich_encoding
 
-    esm_feats  = esm2_encoding(seq)    # (L, 320)
-    rich_feats = rich_encoding(seq)    # (L,  48)
-    return np.concatenate([esm_feats, rich_feats], axis=1)   # (L, 368)
+    esm_feats  = esm2_encoding(seq, model_size=model_size)
+    rich_feats = rich_encoding(seq)
+    return np.concatenate([esm_feats, rich_feats], axis=1)
+
+
+def get_esm_rich_dim(model_size: str = _DEFAULT_SIZE) -> int:
+    """Return the combined feature dimension for a given model_size."""
+    _, _, embed_dim = _ESM_CONFIGS[model_size]
+    return embed_dim + 48
 
 
 def is_esm_available() -> bool:
@@ -121,8 +126,8 @@ def is_esm_available() -> bool:
     except ImportError:
         pass
     try:
-        # Check torch.hub cache without downloading
         torch.hub.list("facebookresearch/esm:main")
         return True
     except Exception:
         return False
+

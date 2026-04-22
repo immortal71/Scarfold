@@ -1,5 +1,5 @@
-#!/usr/bin/env python3
-"""train_v6.py — Fine-tune v5 Evoformer model with ESM-2 sequence embeddings.
+﻿#!/usr/bin/env python3
+"""train_v6.py â€” Fine-tune v5 Evoformer model with ESM-2 sequence embeddings.
 
 Key improvement over v5:
     Replace hand-crafted 48-dim features (one-hot + BLOSUM62 + physicochemical)
@@ -7,14 +7,14 @@ Key improvement over v5:
 
     ESM-2 (esm2_t6_8M_UR50D, 8M params) is a protein language model trained on
     250M sequences.  Its per-residue embeddings provide implicit evolutionary
-    co-variation signal without requiring a raw MSA pipeline — the single biggest
+    co-variation signal without requiring a raw MSA pipeline â€” the single biggest
     representational gap between our model and AlphaFold-class methods.
 
 Strategy:
     1. Load model_v5.pt (Evoformer + TriMul, aa_dim=48).
     2. Build a new TransformerDistancePredictor with aa_dim=368.
     3. Copy all layers whose weights are shape-compatible (everything except
-       residue_proj, which changes from Linear(48→256) to Linear(368→256)).
+       residue_proj, which changes from Linear(48â†’256) to Linear(368â†’256)).
     4. Phase A (warm-up, --warmup-epochs, default 5): only train residue_proj
        so the new projection learns to align ESM-2 features with the frozen
        Evoformer pair-track representation.
@@ -42,11 +42,11 @@ from src.esm_utils import esm2_rich_encoding, ESM_RICH_DIM
 CROP_LEN  = 60
 CROPS_PER = 4
 
-# Test proteins — never seen during training
+# Test proteins â€” never seen during training
 TEST_PIDS = {'1crn', '1vii', '1lyz', '1trz', '1aho', '2ptl', '1tig'}
 
 
-# ── Data loading ──────────────────────────────────────────────────────────────
+# â”€â”€ Data loading â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 def _extract_pid(filename: str) -> str:
     name = os.path.splitext(os.path.basename(filename))[0].lower()
@@ -75,12 +75,12 @@ def load_all_pdbs(pdb_dir: str, min_res: int = 20, max_res: int = 200):
     return samples
 
 
-# ── Model initialisation: transplant v5 weights into new aa_dim=368 model ────
+# â”€â”€ Model initialisation: transplant v5 weights into new aa_dim=368 model â”€â”€â”€â”€
 
 def build_v6_model(base_model_path: str, new_aa_dim: int = ESM_RICH_DIM) -> md.TransformerDistancePredictor:
     """Create a 368-dim TransformerDistancePredictor pre-loaded with v5 weights.
 
-    residue_proj is the only layer with a shape mismatch (48→256 vs 368→256).
+    residue_proj is the only layer with a shape mismatch (48â†’256 vs 368â†’256).
     All other layers (Evoformer, pair track, TriMul, heads) are copied as-is.
     The new residue_proj is initialised with Kaiming-uniform and immediately
     enters Phase-A training (see main()).
@@ -100,7 +100,7 @@ def build_v6_model(base_model_path: str, new_aa_dim: int = ESM_RICH_DIM) -> md.T
     model.aa_dim = new_aa_dim  # keep metadata up-to-date for save_model
 
     if not os.path.exists(base_model_path):
-        print(f'  [train_v6] WARNING: {base_model_path} not found — training from scratch.')
+        print(f'  [train_v6] WARNING: {base_model_path} not found â€” training from scratch.')
         return model
 
     raw = torch.load(base_model_path, map_location='cpu', weights_only=False)
@@ -113,9 +113,9 @@ def build_v6_model(base_model_path: str, new_aa_dim: int = ESM_RICH_DIM) -> md.T
             n_skipped += 1
             continue
         if new_state[key].shape != v5_tensor.shape:
-            # residue_proj.weight / residue_proj.bias — skip, keep Kaiming init
-            print(f'  [train_v6] Shape mismatch — skipping {key} '
-                  f'({list(v5_tensor.shape)} → {list(new_state[key].shape)})')
+            # residue_proj.weight / residue_proj.bias â€” skip, keep Kaiming init
+            print(f'  [train_v6] Shape mismatch â€” skipping {key} '
+                  f'({list(v5_tensor.shape)} â†’ {list(new_state[key].shape)})')
             n_skipped += 1
             continue
         new_state[key] = v5_tensor
@@ -127,7 +127,7 @@ def build_v6_model(base_model_path: str, new_aa_dim: int = ESM_RICH_DIM) -> md.T
     return model
 
 
-# ── Training ──────────────────────────────────────────────────────────────────
+# â”€â”€ Training â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 def one_epoch(
     model: md.TransformerDistancePredictor,
@@ -175,7 +175,7 @@ def one_epoch(
                 lr_weight=lr_weight, lr_sep=lr_sep,
             )
 
-            # Secondary-structure auxiliary loss (unsupervised, from Cα geometry)
+            # Secondary-structure auxiliary loss (unsupervised, from CÎ± geometry)
             ss_lbl = torch.tensor(
                 md.ss_labels_from_dists(dist_np)[None], dtype=torch.long)
             ss_loss = F.cross_entropy(ss_logits.reshape(-1, 3), ss_lbl.reshape(-1))
@@ -207,7 +207,7 @@ def quick_val_mse(model: md.TransformerDistancePredictor, val_samples) -> float:
     return float(np.mean(mses)) if mses else 999.0
 
 
-# ── CLI ───────────────────────────────────────────────────────────────────────
+# â”€â”€ CLI â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 def main():
     parser = argparse.ArgumentParser(
@@ -233,7 +233,7 @@ def main():
     args = parser.parse_args()
 
     print('=' * 68)
-    print('  v6  ESM-2 (320-dim) + rich (48-dim) → 368-dim Evoformer TriMul')
+    print('  v6  ESM-2 (320-dim) + rich (48-dim) -> 368-dim Evoformer TriMul')
     print(f'  {args.epochs} epochs total  |  {args.warmup_epochs} warm-up  |  '
           f'lr={args.lr}  lr_weight={args.lr_weight}')
     print('=' * 68)
@@ -241,7 +241,7 @@ def main():
     rng = np.random.default_rng(args.seed)
     torch.manual_seed(args.seed)
 
-    # ── Load training data ─────────────────────────────────────────────────
+    # â”€â”€ Load training data â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     print(f'\nLoading PDB files from {args.pdb_dir} ...')
     all_samples = load_all_pdbs(args.pdb_dir, min_res=20, max_res=200)
     if not all_samples:
@@ -258,16 +258,16 @@ def main():
     train_samples = [all_samples[i] for i in idx[n_val:]]
     print(f'  Split: {len(train_samples)} train / {len(val_samples)} val\n')
 
-    # ── Build v6 model (ESM-2 input, v5 Evoformer weights) ────────────────
+    # â”€â”€ Build v6 model (ESM-2 input, v5 Evoformer weights) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     print(f'Building v6 model from {args.base_model} ...')
     model = build_v6_model(args.base_model, new_aa_dim=ESM_RICH_DIM)
     n_params = sum(p.numel() for p in model.parameters())
     print(f'  Total parameters: {n_params:,}')
 
-    # ── Phase A: warm up residue_proj only ────────────────────────────────
+    # â”€â”€ Phase A: warm up residue_proj only â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     if args.warmup_epochs > 0:
-        print(f'\n── Phase A: residue_proj warm-up ({args.warmup_epochs} epochs, '
-              f'lr={args.warmup_lr}) ──')
+        print(f'\nâ”€â”€ Phase A: residue_proj warm-up ({args.warmup_epochs} epochs, '
+              f'lr={args.warmup_lr}) â”€â”€')
         # Freeze everything except residue_proj
         for name, param in model.named_parameters():
             param.requires_grad_(name.startswith('residue_proj'))
@@ -289,9 +289,9 @@ def main():
         for param in model.parameters():
             param.requires_grad_(True)
 
-    # ── Phase B: full fine-tune ───────────────────────────────────────────
+    # â”€â”€ Phase B: full fine-tune â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     phase_b_epochs = args.epochs - args.warmup_epochs
-    print(f'\n── Phase B: full fine-tune ({phase_b_epochs} epochs, lr={args.lr}) ──')
+    print(f'\nâ”€â”€ Phase B: full fine-tune ({phase_b_epochs} epochs, lr={args.lr}) â”€â”€')
     opt   = torch.optim.AdamW(model.parameters(), lr=args.lr, weight_decay=1e-4)
     sched = torch.optim.lr_scheduler.CosineAnnealingLR(
         opt, T_max=max(phase_b_epochs, 1), eta_min=args.lr * 0.05)
@@ -321,7 +321,7 @@ def main():
         if val_mse < best_val:
             best_val   = val_mse
             best_state = copy.deepcopy(model.state_dict())
-            star = ' ★'
+            star = ' â˜…'
             _tmp = args.out + '.best_so_far.pt'
             torch.save({'state_dict': best_state, 'aa_dim': ESM_RICH_DIM,
                         'epoch': args.warmup_epochs + ep,
@@ -331,7 +331,7 @@ def main():
               f'train={train_loss:.4f}  val_MSE={val_mse:.2f}  '
               f'({elapsed:.0f}s){star}')
 
-    # ── Save best model ────────────────────────────────────────────────────
+    # â”€â”€ Save best model â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     if best_state:
         model.load_state_dict(best_state)
     torch.save({'state_dict': model.state_dict(), 'aa_dim': ESM_RICH_DIM}, args.out)
@@ -344,7 +344,7 @@ def main():
         json.dump({'args': vars(args), 'history': history}, f, indent=2)
     print(f'History: {hist_path}')
 
-    # ── Cleanup temp file ─────────────────────────────────────────────────
+    # â”€â”€ Cleanup temp file â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     tmp = args.out + '.best_so_far.pt'
     if os.path.exists(tmp):
         os.remove(tmp)
@@ -352,3 +352,4 @@ def main():
 
 if __name__ == '__main__':
     main()
+
