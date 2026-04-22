@@ -18,6 +18,13 @@ try:
 except ImportError:
     _HAS_PSSM = False
 
+try:
+    from src.esm_utils import esm2_rich_encoding, ESM_RICH_DIM as _ESM_RICH_DIM
+    _HAS_ESM = True
+except Exception:
+    _ESM_RICH_DIM = 368
+    _HAS_ESM = False
+
 
 def evaluate_model(model, seq, true_coords, pssm_path=None):
     """Evaluate model on one sequence.  Optionally supply a PSI-BLAST PSSM file."""
@@ -28,6 +35,8 @@ def evaluate_model(model, seq, true_coords, pssm_path=None):
     if pssm_path and _HAS_PSSM:
         pssm_matrix = pssm_utils.parse_psiblast_pssm(pssm_path)
         enc = pssm_utils.encoding_with_pssm(seq, pssm=pssm_matrix)
+    elif model_aa_dim == _ESM_RICH_DIM and _HAS_ESM:
+        enc = esm2_rich_encoding(seq)     # v6 model: ESM-2 (320) + rich (48) = 368-dim
     elif model_aa_dim == 20:
         enc = utils.one_hot(seq)          # legacy model trained on one-hot
     else:

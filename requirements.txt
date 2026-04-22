@@ -4,3 +4,4 @@ plotly
 biopython
 scipy
 matplotlib
+fair-esm

@@ -18,7 +18,7 @@
 8. [Interactive outputs](#interactive-outputs)
 9. [Ideas to extend](#ideas-to-extend)
 
-> **New in latest version (v4):** **Triangle multiplication** (AlphaFold2 Algorithms 11 & 12) added to each Evoformer-lite layer — pair (i,j) now aggregates over ALL intermediate residues k, enabling genuine geometric transitivity (if d(i,k) and d(k,j) are known, d(i,j) is inferred). **Expanded training** to 50 diverse proteins across all SCOP classes with **crop augmentation** (4 random L=60 windows per long chain per epoch, turning 50 proteins into thousands of effective training examples), trained for 300 epochs; **contact BCE** auxiliary loss added. Previous (v3): real-PDB training on 20 proteins, variable-length, uniform distogram loss, long-range contact precision metric. Earlier: backbone MDS bond constraint, SS-guided synthetic data, recycling, SS/pLDDT heads, pair-bias attention, PSSM module.
+> **New in latest version (v6):** Input features upgraded from 48-dim hand-crafted encoding to **368-dim ESM-2 + rich** features. ESM-2 (`esm2_t6_8M_UR50D`, 8 M params) provides 320-dim per-residue protein language-model embeddings — implicit evolutionary co-variation distilled from 250 M sequences, without any MSA pipeline. Combined with the 48-dim rich encoding (BLOSUM62 + physicochemical), the new 368-dim input is expected to substantially improve TM-score and long-range contact precision. Previous (v5): LR-weighted contact BCE loss (8× upweight for |i-j|≥12), first non-zero LR P@L/5 = 0.266. Previous (v4): triangle multiplication + 50-protein training + crop augmentation.
 
 ---
 
@@ -166,11 +166,14 @@ Evaluation on **7 diverse completely held-out** proteins (never seen during trai
 
 **Progression across versions:**
 
-| Metric | v3 | v4 | **v5** | Δ (v3→v5) |
+| Metric | v3 | v4 | v5 | **v6 (ESM-2)** |
 |---|---|---|---|---|
-| Contact F1 | 0.700 | 0.720 | **0.747** | **+6.7%** |
-| Long-range precision (P@L/5, \|i-j\|≥12) | 0.000 | 0.111 | **0.266** | **first non-zero → +140%** |
-| local lDDT | 44.0 | 39.5 | **44.9** | **+2.1%** |
+| Contact F1 | 0.700 | 0.720 | 0.747 | **TBD** |
+| Long-range precision (P@L/5, \|i-j\|≥12) | 0.000 | 0.111 | 0.266 | **TBD** |
+| local lDDT | 44.0 | 39.5 | 44.9 | **TBD** |
+| Input features | 48-dim | 48-dim | 48-dim | **368-dim (ESM-2+rich)** |
+
+*v6 results are pending: run `python src/train_v6.py` then `python src/eval_v6.py`.*
 
 > **Honest context on contact F1**: Our controlled ablation (see `report/report.md`) reveals that a zero-learning sequence-distance baseline achieves F1 = **0.712**, because most contacts in small proteins are between sequence-adjacent residues. Contact F1 alone is insufficient. The scientifically meaningful metric is **long-range precision P@L/5** (|i-j| ≥ 12): v3 achieves 0.000, v4 achieves 0.111, v5 achieves **0.266** across 7 diverse proteins — the pair track with triangle multiplication + LR-weighted training loss is what drives this.
 
@@ -228,6 +231,9 @@ Scarfold/
 │   ├── evaluate.py       ← evaluation script, saves JSON results
 │   ├── benchmark.py      ← statistical comparison: MLP vs Transformer vs 3 naive baselines
 │   ├── ablation.py       ← systematic ablation study (11 conditions, all component combos)
+│   ├── esm_utils.py      ← ESM-2 (320-dim) embeddings — drop-in feature extractor (v6)
+│   ├── train_v6.py       ← v6 training: ESM-2 + rich encoding, warm-up then full fine-tune
+│   ├── eval_v6.py        ← v6 evaluation on 7 held-out test proteins
 │   ├── pssm.py           ← PSSM encoding: pseudo / PSI-BLAST / runner (50-dim features)
 │   ├── download_data.py  ← download PDB structures (RCSB search or CATH S35 non-redundant)
 │   ├── utils.py          ← MDS, Kabsch, pLDDT, lDDT, TM-score, BLOSUM62/rich encoding
@@ -427,7 +433,8 @@ After running the pipeline, open any `.html` file in your browser:
 - ✅ **Real-PDB training on 50+ diverse proteins** (v4) — all major SCOP structural classes
 
 **Remaining gaps (true research frontier):**
-- **Full MSA via PSI-BLAST** — the single biggest gap from AlphaFold. `src/pssm.py` has `run_psiblast()` ready; needs UniRef50 database (~70 GB). Evolutionary coevolution from deep MSA is how AlphaFold learns long-range contacts. Without it, `long_range_precision_L5` stays near zero for this model.
+- ✅ **ESM-2 protein language model embeddings** (v6) — `src/esm_utils.py` + `src/train_v6.py`. 320-dim per-residue embeddings from `esm2_t6_8M_UR50D` (8M params, trained on 250M sequences) replace the 48-dim hand-crafted encoding, providing implicit evolutionary co-variation without a raw MSA pipeline. Combined input: 368-dim (ESM-2 + rich encoding).
+- **Full MSA via PSI-BLAST** — next gap after ESM-2. `src/pssm.py` has `run_psiblast()` ready; needs UniRef50 database (~70 GB). Evolutionary coevolution from deep MSA is how AlphaFold learns long-range contacts. Without it, `long_range_precision_L5` stays near zero for this model.
 - **Row/column-wise attention on pair representation** — AF2's full Evoformer has row-wise gated self-attention on the pair matrix (quadratic in L, currently omitted for tractability)
 - **End-to-end training** — backpropagate through gradient MDS with differentiable lDDT loss
 - **Template features** — use known structure templates as additional input (AlphaFold-style)
