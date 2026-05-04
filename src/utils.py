@@ -264,65 +264,67 @@ def classical_mds(dist_mat, dim=3):
     return coords
 
 
-def gradient_mds(dist_mat, dim=3, n_iter=500, lr=0.05):
-    """Gradient-based coordinate optimisation: minimise distance violation loss.
+def gradient_mds(dist_mat, dim=3, n_iter=600, lr=0.05, n_restarts=8):
+    """Multi-restart gradient coordinate optimisation from a predicted distance matrix.
 
-    Starts from classical MDS (warm start) then refines with Adam + Huber loss.
-    Three regularisers improve reconstruction quality:
+    Runs n_restarts independent optimisations (1 from classical MDS warm-start +
+    n_restarts-1 from random perturbations) and returns the solution with the
+    lowest distance-reconstruction loss.  Multiple restarts escape local minima
+    that cause mirror-image or misfolded solutions — the main reason for low
+    TM-score when MDS is used with a single initialisation.
 
-    1. **Backbone bond constraint** (always active): consecutive Cα distances must
-       be 3.8 Å (rigid physical constraint). In a protein chain every peptide
-       bond produces a fixed Cα-Cα distance of ~3.8 Å.  Adding a strong penalty
-       keeps the chain connected even when long-range distance predictions are noisy.
-
-    2. **lDDT-proxy regulariser** (first 3/4 of iterations): smooth sigmoid reward
-       for pairs where |pred_d - true_d| < 2 Å (strictest lDDT threshold).
-       Aligns the optimisation objective with the evaluation metric.
-
-    3. **Chirality / orientation bias** (optional via cosine annealing LR without
-       explicit constraint): the Adam optimiser with warm restarts naturally avoids
-       mirror-image solutions.
+    Each restart uses Adam + Cosine-LR with:
+      - Huber distance loss  (robust to outlier distance predictions)
+      - Backbone bond constraint  (d(i,i+1) ≈ 3.8 Å, weight=10)
+      - lDDT-proxy reward  (sigmoid reward for sub-2 Å errors, first 3/4 iters)
     """
     import torch
-    target = torch.tensor(dist_mat, dtype=torch.float32)
-    init = classical_mds(dist_mat, dim=dim)
-    coords = torch.tensor(init, dtype=torch.float32, requires_grad=True)
-    opt = torch.optim.Adam([coords], lr=lr)
-    scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(opt, T_max=n_iter, eta_min=lr * 0.01)
 
-    # Pre-compute pair masks
+    target = torch.tensor(dist_mat, dtype=torch.float32)
     L = target.shape[0]
     triu_i, triu_j = torch.triu_indices(L, L, offset=1)
-    # Backbone bond pairs: (i, i+1) — physical constraint d ≈ 3.8 Å
     backbone_i = torch.arange(L - 1)
     backbone_j = backbone_i + 1
 
-    for step in range(n_iter):
-        diff = coords.unsqueeze(0) - coords.unsqueeze(1)       # (L,L,3)
-        pred_d = torch.sqrt((diff ** 2).sum(-1) + 1e-8)        # (L,L)
+    classical_init = classical_mds(dist_mat, dim=dim)
 
-        # Huber distance reconstruction loss (robust to outlier predictions)
-        loss = torch.nn.functional.huber_loss(pred_d, target, delta=2.0)
+    def _run_one(init_np, seed):
+        torch.manual_seed(seed)
+        coords = torch.tensor(init_np, dtype=torch.float32, requires_grad=True)
+        opt = torch.optim.Adam([coords], lr=lr)
+        sched = torch.optim.lr_scheduler.CosineAnnealingLR(opt, T_max=n_iter, eta_min=lr * 0.01)
+        for step in range(n_iter):
+            diff = coords.unsqueeze(0) - coords.unsqueeze(1)
+            pred_d = torch.sqrt((diff ** 2).sum(-1) + 1e-8)
+            loss = torch.nn.functional.huber_loss(pred_d, target, delta=2.0)
+            bone_pred = pred_d[backbone_i, backbone_j]
+            loss = loss + 10.0 * torch.mean((bone_pred - 3.8) ** 2)
+            if step < n_iter * 3 // 4:
+                delta_d = (pred_d[triu_i, triu_j] - target[triu_i, triu_j]).abs()
+                loss = loss - 0.15 * torch.sigmoid(2.0 - delta_d).mean()
+            opt.zero_grad()
+            loss.backward()
+            opt.step()
+            sched.step()
+        with torch.no_grad():
+            diff = coords.unsqueeze(0) - coords.unsqueeze(1)
+            pred_d = torch.sqrt((diff ** 2).sum(-1) + 1e-8)
+            final_loss = float(torch.nn.functional.huber_loss(pred_d, target, delta=2.0))
+        return coords.detach().numpy(), final_loss
 
-        # ── Backbone bond constraint ──────────────────────────────────────────────────
-        # Physical constraint: consecutive Cα atoms are always ~3.8 Å apart.
-        # Weight = 5.0 makes this a hard constraint: a 1 Å bond error contributes
-        # 5 units of loss vs the ~0.05 per-pair contribution from Huber.
-        bone_pred = pred_d[backbone_i, backbone_j]         # (L-1,)
-        bone_loss = torch.mean((bone_pred - 3.8) ** 2)
-        loss = loss + 5.0 * bone_loss
+    best_coords, best_loss = _run_one(classical_init, seed=0)
 
-        # ── lDDT-proxy regulariser ─────────────────────────────────────────────────
-        if step < n_iter * 3 // 4:
-            delta_d = (pred_d[triu_i, triu_j] - target[triu_i, triu_j]).abs()
-            lddt_proxy = torch.sigmoid(2.0 - delta_d).mean()
-            loss = loss - 0.1 * lddt_proxy   # reward sub-2 Å errors
+    rng = np.random.default_rng(42)
+    for k in range(1, n_restarts):
+        # Random perturbation of classical MDS init (different scale each restart)
+        noise_scale = 2.0 * k
+        init_np = classical_init + rng.standard_normal(classical_init.shape) * noise_scale
+        coords_k, loss_k = _run_one(init_np, seed=k)
+        if loss_k < best_loss:
+            best_loss = loss_k
+            best_coords = coords_k
 
-        opt.zero_grad()
-        loss.backward()
-        opt.step()
-        scheduler.step()
-    return coords.detach().numpy()
+    return best_coords
 
 
 

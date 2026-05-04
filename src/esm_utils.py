@@ -131,3 +131,83 @@ def is_esm_available() -> bool:
     except Exception:
         return False
 
+
+# ---------------------------------------------------------------------------
+# Disk-based embedding cache  (data/esm2_cache.npz)
+# ---------------------------------------------------------------------------
+# Precompute ESM-2 embeddings for all PDB files ONCE and persist to disk.
+# Subsequent training runs load in <1 second instead of spending 20+ minutes
+# re-running ESM-2 on 484 proteins.
+#
+# Usage:
+#   python src/esm_utils.py --cache-dir data/pdbs --cache-out data/esm2_cache.npz
+# Or call from Python:
+#   build_disk_cache('data/pdbs', 'data/esm2_cache.npz')
+# ---------------------------------------------------------------------------
+
+_DISK_CACHE: dict = {}          # in-memory copy of loaded disk cache
+_DISK_CACHE_PATH: str = ''
+
+
+def load_disk_cache(cache_path: str) -> None:
+    """Load a pre-built .npz embedding cache into memory."""
+    global _DISK_CACHE, _DISK_CACHE_PATH
+    if cache_path == _DISK_CACHE_PATH and _DISK_CACHE:
+        return
+    if not os.path.exists(cache_path):
+        return
+    data = np.load(cache_path, allow_pickle=True)
+    _DISK_CACHE = {str(k): data[k] for k in data.files}
+    _DISK_CACHE_PATH = cache_path
+    print(f"  [esm_utils] Loaded disk cache: {len(_DISK_CACHE)} embeddings from {cache_path}")
+
+
+def esm2_rich_encoding_cached(seq: str, cache_path: str = 'data/esm2_cache.npz',
+                               model_size: str = _DEFAULT_SIZE) -> np.ndarray:
+    """Return (L, D+48) features — from disk cache if available, else compute."""
+    if cache_path and not _DISK_CACHE:
+        load_disk_cache(cache_path)
+    if seq in _DISK_CACHE:
+        arr = _DISK_CACHE[seq]
+        return arr.astype(np.float32)
+    return esm2_rich_encoding(seq, model_size=model_size)
+
+
+def build_disk_cache(pdb_dir: str, cache_out: str = 'data/esm2_cache.npz',
+                     model_size: str = _DEFAULT_SIZE,
+                     max_residues: int = 200) -> None:
+    """Precompute ESM-2+rich embeddings for all PDBs in pdb_dir and save to disk."""
+    import glob
+    import sys as _sys
+    _sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+    from src import utils as _utils
+
+    paths = sorted(glob.glob(os.path.join(pdb_dir, '*.pdb')) +
+                   glob.glob(os.path.join(pdb_dir, '*.ent')))
+    print(f"  [esm_utils] Building disk cache for {len(paths)} PDB files -> {cache_out}")
+
+    cache = {}
+    for i, path in enumerate(paths):
+        try:
+            seq = _utils.pdb_sequence(path, chain='A', max_residues=max_residues)
+            if seq and seq not in cache:
+                cache[seq] = esm2_rich_encoding(seq, model_size=model_size)
+            if (i + 1) % 50 == 0:
+                print(f"    {i+1}/{len(paths)} done ({len(cache)} unique seqs) ...")
+        except Exception as e:
+            print(f"    SKIP {os.path.basename(path)}: {e}")
+
+    os.makedirs(os.path.dirname(cache_out) if os.path.dirname(cache_out) else '.', exist_ok=True)
+    np.savez_compressed(cache_out, **cache)
+    print(f"  [esm_utils] Saved {len(cache)} embeddings to {cache_out}")
+
+
+if __name__ == '__main__':
+    import argparse
+    p = argparse.ArgumentParser(description='Precompute ESM-2 disk cache')
+    p.add_argument('--cache-dir', default='data/pdbs', help='Directory of PDB files')
+    p.add_argument('--cache-out', default='data/esm2_cache.npz', help='Output .npz cache file')
+    p.add_argument('--model-size', default='8M', choices=['8M', '35M'])
+    args = p.parse_args()
+    build_disk_cache(args.cache_dir, args.cache_out, model_size=args.model_size)
+

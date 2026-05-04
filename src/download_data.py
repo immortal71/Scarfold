@@ -1,9 +1,9 @@
-"""download_data.py — Download a curated set of small, clean protein structures for training.
+﻿"""download_data.py â€” Download a curated set of small, clean protein structures for training.
 
 Uses the RCSB PDB REST API to select proteins that are:
-  - Single-chain X-ray structures with resolution ≤ 2.5 Å
-  - 40–120 residues (trainable on a laptop)
-  - R-free ≤ 0.25 (high quality)
+  - Single-chain X-ray structures with resolution â‰¤ 2.5 Ã…
+  - 40â€“120 residues (trainable on a laptop)
+  - R-free â‰¤ 0.25 (high quality)
 
 Usage:
     python src/download_data.py --n 100 --out data/pdbs
@@ -23,12 +23,12 @@ import urllib.request
 import urllib.error
 import json
 
-# ── curated fallback list of small, well-studied proteins ──────────────────────
-# These are manually verified single-chain structures 40–120 residues.
+# â”€â”€ curated fallback list of small, well-studied proteins â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+# These are manually verified single-chain structures 40â€“120 residues.
 FALLBACK_PDB_IDS = [
-    '1crn',  # crambin          46 res  – most-studied small protein
+    '1crn',  # crambin          46 res  â€“ most-studied small protein
     '1ubq',  # ubiquitin        76 res
-    '1l2y',  # trp-cage         20 res  – smallest folded protein
+    '1l2y',  # trp-cage         20 res  â€“ smallest folded protein
     '2l9r',  # villin headpiece 35 res
     '1gb1',  # GB1 domain       56 res
     '1bdd',  # B domain ProtA   60 res
@@ -39,7 +39,7 @@ FALLBACK_PDB_IDS = [
     '1a43',  # SH3 domain       60 res
     '1aho',  # crambin analog   64 res
     '2ptl',  # PTL domain       77 res
-    '1ail',  # AilL             73 res  – all-alpha
+    '1ail',  # AilL             73 res  â€“ all-alpha
     '1bta',  # B-domain         60 res
     '1e0g',  # Cro repressor    72 res
     '1c9o',  # rubredoxin       52 res
@@ -68,7 +68,7 @@ FALLBACK_PDB_IDS = [
     '1qnz',  # QNZ              90 res
     '1hyp',  # HYP protein      63 res
     '1lis',  # LIS-1 domain     88 res
-    '2lzm',  # lysozyme T4      164 res (≈ use max-res 100)
+    '2lzm',  # lysozyme T4      164 res (â‰ˆ use max-res 100)
     '1lmb',  # lambda repressor 92 res
     '1r69',  # engrailed HD     61 res
     '2hda',  # hemoglobin chain 141 res
@@ -172,7 +172,7 @@ def _download_cath_s35(n, output_dir, min_residues=40, max_residues=120):
 
     Strategy:
       1. Fetch the CATH v4.3 S35 representative domain list (text file).
-      2. Parse domain IDs (format 1a0pA00 → PDB=1a0p, chain=A).
+      2. Parse domain IDs (format 1a0pA00 â†’ PDB=1a0p, chain=A).
       3. Download the corresponding PDB files from RCSB.
     Only chains with residue count in [min_residues, max_residues] are kept.
     """
@@ -180,7 +180,7 @@ def _download_cath_s35(n, output_dir, min_residues=40, max_residues=120):
         'https://download.cathdb.info/cath/releases/latest-release/'
         'non-redundant-data-sets/cath-dataset-nonredundant-S35.list'
     )
-    print('Fetching CATH S35 representative domain list …')
+    print('Fetching CATH S35 representative domain list â€¦')
     try:
         with urllib.request.urlopen(DOMAIN_LIST_URL, timeout=30) as resp:
             raw = resp.read().decode('utf-8', errors='replace')
@@ -206,12 +206,12 @@ def _download_cath_s35(n, output_dir, min_residues=40, max_residues=120):
         pdb_id = dom[:4].lower()
         path, status = download_pdb(pdb_id, output_dir)
         if status == 'downloaded':
-            print(f'  [CATH {ok+1:3d}/{n}] ✓ {pdb_id}  (domain {dom})')
+            print(f'  [CATH {ok+1:3d}/{n}] âœ“ {pdb_id}  (domain {dom})')
             ok += 1
         elif status == 'skipped':
-            ok += 1  # already on disk — counts toward quota
+            ok += 1  # already on disk â€” counts toward quota
         else:
-            print(f'  [CATH] ✗ {pdb_id}: {status}')
+            print(f'  [CATH] âœ-- {pdb_id}: {status}')
         time.sleep(0.1)
     return ok
 
@@ -222,7 +222,7 @@ def main():
     parser.add_argument('--out', type=str, default='data/pdbs', help='Output directory')
     parser.add_argument('--min-residues', type=int, default=40)
     parser.add_argument('--max-residues', type=int, default=120)
-    parser.add_argument('--max-resolution', type=float, default=2.5, help='Max X-ray resolution (Å)')
+    parser.add_argument('--max-resolution', type=float, default=2.5, help='Max X-ray resolution (Ã…)')
     parser.add_argument('--use-fallback', action='store_true',
                         help='Skip API search and use built-in curated list')
     parser.add_argument('--cath-s35', action='store_true',
@@ -231,7 +231,7 @@ def main():
     args = parser.parse_args()
 
     os.makedirs(args.out, exist_ok=True)
-    print(f'Downloading up to {args.n} PDB structures → {args.out}/')
+    print(f'Downloading up to {args.n} PDB structures â†’ {args.out}/')
 
     if args.cath_s35:
         print('Mode: CATH S35 non-redundant domains')
@@ -243,7 +243,7 @@ def main():
             ids = FALLBACK_PDB_IDS[:args.n]
         else:
             print(f'\nDone: {result} CATH S35 structures collected in {os.path.abspath(args.out)}')
-            print('\nNext step — train on real data:')
+            print('\nNext step â€” train on real data:')
             print('  python src/train.py --train-from-pdb --pdb-dir', args.out,
                   '--model transformer --epochs 60 --lr 5e-4 '
                   '--save-path model_final_real.pt --csv train_history_real.csv')
@@ -269,18 +269,18 @@ def main():
     for pdb_id in ids:
         path, status = download_pdb(pdb_id, args.out)
         if status == 'downloaded':
-            print(f'  [{ok+skip+fail+1:3d}/{len(ids)}] ✓ {pdb_id}')
+            print(f'  [{ok+skip+fail+1:3d}/{len(ids)}] âœ“ {pdb_id}')
             ok += 1
         elif status == 'skipped':
             skip += 1
         else:
-            print(f'  [{ok+skip+fail+1:3d}/{len(ids)}] ✗ {pdb_id}: {status}')
+            print(f'  [{ok+skip+fail+1:3d}/{len(ids)}] âœ-- {pdb_id}: {status}')
             fail += 1
         time.sleep(0.1)  # be polite to RCSB
 
     print(f'\nDone: {ok} downloaded, {skip} already existed, {fail} failed.')
     print(f'PDB files in: {os.path.abspath(args.out)}')
-    print('\nNext step — train on real data:')
+    print('\nNext step â€” train on real data:')
     print('  python src/train.py --train-from-pdb --pdb-dir', args.out,
           '--model transformer --epochs 60 --lr 5e-4 '
           '--save-path model_final_real.pt --csv train_history_real.csv')
@@ -288,3 +288,4 @@ def main():
 
 if __name__ == '__main__':
     main()
+

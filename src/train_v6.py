@@ -37,13 +37,26 @@ import torch.nn.functional as F
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 from src import utils, model as md
-from src.esm_utils import esm2_rich_encoding, ESM_RICH_DIM
+from src.esm_utils import esm2_rich_encoding, ESM_RICH_DIM, esm2_encoding, esm2_rich_encoding_cached, build_disk_cache
 
 CROP_LEN  = 60
 CROPS_PER = 4
 
-# Test proteins â€” never seen during training
+# Test proteins -- never seen during training
 TEST_PIDS = {'1crn', '1vii', '1lyz', '1trz', '1aho', '2ptl', '1tig'}
+
+
+# -- ESM-2 full-protein cache -------------------------------------------------
+# Precompute ESM-2 embeddings for each full-length protein once per process.
+# Crops are sliced from the cached full-length embeddings, saving ~95% of
+# forward-pass compute (ESM-2 is the bottleneck at ~5s/protein on CPU).
+_ESM_CACHE: dict = {}
+
+def _cached_esm2_rich(seq: str) -> np.ndarray:
+    """Return (L, 368) ESM-2+rich encoding, checking disk cache first."""
+    if seq not in _ESM_CACHE:
+        _ESM_CACHE[seq] = esm2_rich_encoding_cached(seq, cache_path='data/esm2_cache.npz')
+    return _ESM_CACHE[seq]
 
 
 # â”€â”€ Data loading â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
@@ -137,6 +150,7 @@ def one_epoch(
     lr_weight: float,
     lr_sep: int,
     contact_weight: float,
+    crops_per: int = 4,
 ) -> float:
     """One training epoch: random crop each protein, encode with ESM-2+rich, forward+backward."""
     model.train()
@@ -145,7 +159,7 @@ def one_epoch(
 
     for i in order:
         seq_r, coords_r, _ = train_samples[i]
-        n_crops = CROPS_PER if len(seq_r) > CROP_LEN else 1
+        n_crops = crops_per if len(seq_r) > CROP_LEN else 1
 
         for _ in range(n_crops):
             L = len(seq_r)
@@ -156,8 +170,9 @@ def one_epoch(
             else:
                 seq_c, crd_c = seq_r, coords_r
 
-            # ESM-2 + rich encoding (368-dim)
-            enc     = esm2_rich_encoding(seq_c)
+            # ESM-2 + rich encoding (368-dim) -- sliced from cached full-protein embedding
+            full_enc = _cached_esm2_rich(seq_r)
+            enc      = full_enc[start : start + len(seq_c)] if len(seq_r) > CROP_LEN else full_enc
             dist_np = utils.coords_to_distances(crd_c).astype(np.float32)
 
             X = torch.tensor(enc[None],     dtype=torch.float32)   # (1, L, 368)
@@ -198,7 +213,7 @@ def quick_val_mse(model: md.TransformerDistancePredictor, val_samples) -> float:
     with torch.no_grad():
         for seq_r, coords_r, _ in val_samples:
             L = min(len(seq_r), CROP_LEN)
-            enc  = esm2_rich_encoding(seq_r[:L])
+            enc  = _cached_esm2_rich(seq_r)[:L]
             dist = utils.coords_to_distances(coords_r[:L]).astype(np.float32)
             X    = torch.tensor(enc[None], dtype=torch.float32)
             logits, _, _ = model.forward_full(X)
@@ -228,8 +243,14 @@ def main():
     parser.add_argument('--lr-sep',          type=int,   default=12)
     parser.add_argument('--contact-weight',  type=float, default=0.5,
                         help='Weight of contact BCE relative to distogram CE')
+    parser.add_argument('--crops',           type=int,   default=4,
+                        help='Random crops per protein per epoch (default 4; use 1-2 for large datasets)')
     parser.add_argument('--out',             default='model_v6.pt')
     parser.add_argument('--seed',            type=int,   default=42)
+    parser.add_argument('--resume',          default=None,
+                        help='Resume Phase B from this checkpoint file')
+    parser.add_argument('--resume-epoch',    type=int,   default=0,
+                        help='Phase-B epoch already completed (used with --resume to set scheduler)')
     args = parser.parse_args()
 
     print('=' * 68)
@@ -240,6 +261,15 @@ def main():
 
     rng = np.random.default_rng(args.seed)
     torch.manual_seed(args.seed)
+
+    # -- Pre-build ESM-2 disk cache if missing --------------------------------
+    cache_path = 'data/esm2_cache.npz'
+    if not os.path.exists(cache_path):
+        print(f'\nESM-2 disk cache not found. Building once -> {cache_path} ...')
+        build_disk_cache(args.pdb_dir, cache_path)
+        print('  Cache built. Future runs load instantly.\n')
+    else:
+        print(f'\nESM-2 disk cache found ({cache_path}) -- loading on first call.\n')
 
     # â”€â”€ Load training data â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     print(f'\nLoading PDB files from {args.pdb_dir} ...')
@@ -259,13 +289,26 @@ def main():
     print(f'  Split: {len(train_samples)} train / {len(val_samples)} val\n')
 
     # â”€â”€ Build v6 model (ESM-2 input, v5 Evoformer weights) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-    print(f'Building v6 model from {args.base_model} ...')
-    model = build_v6_model(args.base_model, new_aa_dim=ESM_RICH_DIM)
-    n_params = sum(p.numel() for p in model.parameters())
-    print(f'  Total parameters: {n_params:,}')
+    if args.resume:
+        print(f'Resuming from checkpoint: {args.resume} ...')
+        raw = torch.load(args.resume, map_location='cpu', weights_only=False)
+        state = raw['state_dict'] if isinstance(raw, dict) and 'state_dict' in raw else raw
+        model = md.TransformerDistancePredictor(
+            seq_len=CROP_LEN, aa_dim=ESM_RICH_DIM, hidden=256, pair_dim=64,
+            nhead=4, num_layers=4, n_bins=md.NUM_BINS + 1, dropout=0.1, num_recycles=3,
+        )
+        model.load_state_dict(state)
+        model.aa_dim = ESM_RICH_DIM
+        n_params = sum(p.numel() for p in model.parameters())
+        print(f'  Total parameters: {n_params:,}  (resumed from epoch {args.resume_epoch})')
+    else:
+        print(f'Building v6 model from {args.base_model} ...')
+        model = build_v6_model(args.base_model, new_aa_dim=ESM_RICH_DIM)
+        n_params = sum(p.numel() for p in model.parameters())
+        print(f'  Total parameters: {n_params:,}')
 
     # â”€â”€ Phase A: warm up residue_proj only â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-    if args.warmup_epochs > 0:
+    if args.warmup_epochs > 0 and not args.resume:
         print(f'\nâ”€â”€ Phase A: residue_proj warm-up ({args.warmup_epochs} epochs, '
               f'lr={args.warmup_lr}) â”€â”€')
         # Freeze everything except residue_proj
@@ -281,7 +324,8 @@ def main():
             loss = one_epoch(model, train_samples, opt_a, rng,
                              lr_weight=args.lr_weight,
                              lr_sep=args.lr_sep,
-                             contact_weight=args.contact_weight)
+                             contact_weight=args.contact_weight,
+                             crops_per=args.crops)
             print(f'  Warm-up ep {ep:2d}/{args.warmup_epochs}  '
                   f'train_loss={loss:.4f}  ({time.time()-t0:.0f}s)')
 
@@ -296,17 +340,26 @@ def main():
     sched = torch.optim.lr_scheduler.CosineAnnealingLR(
         opt, T_max=max(phase_b_epochs, 1), eta_min=args.lr * 0.05)
 
+    # Fast-forward scheduler if resuming mid-training
+    start_ep = 1
+    if args.resume and args.resume_epoch > 0:
+        for _ in range(args.resume_epoch):
+            sched.step()
+        start_ep = args.resume_epoch + 1
+        print(f'  Scheduler fast-forwarded to epoch {args.resume_epoch}; resuming from ep {start_ep}.')
+
     best_val   = float('inf')
     best_state = None
     history    = []
     t_start    = time.time()
 
-    for ep in range(1, phase_b_epochs + 1):
+    for ep in range(start_ep, phase_b_epochs + 1):
         ep_t = time.time()
         train_loss = one_epoch(model, train_samples, opt, rng,
                                lr_weight=args.lr_weight,
                                lr_sep=args.lr_sep,
-                               contact_weight=args.contact_weight)
+                               contact_weight=args.contact_weight,
+                               crops_per=args.crops)
         sched.step()
         val_mse = quick_val_mse(model, val_samples)
         elapsed = time.time() - ep_t
