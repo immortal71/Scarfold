@@ -134,6 +134,45 @@ class TriangleMultiplication(nn.Module):
         return z
 
 
+class CoordinateHead(nn.Module):
+    """Direct 3D Cα coordinate prediction from pair + sequence representations.
+
+    Architecture:
+        pair (B, L, L, pair_dim) → symmetric mean over i and j → (B, L, pair_dim)
+        concat with seq (B, L, hidden) → (B, L, pair_dim + hidden)
+        MLP → (B, L, 3)  [mean-centered]
+
+    Trained with an all-pairs Huber distance loss so that the predicted
+    coordinates are forced to be geometrically consistent — the model cannot
+    cheat by predicting distances that are not 3D embeddable.
+    """
+    def __init__(self, pair_dim: int, hidden: int):
+        super().__init__()
+        in_dim = pair_dim + hidden
+        self.net = nn.Sequential(
+            nn.LayerNorm(in_dim),
+            nn.Linear(in_dim, 256),
+            nn.GELU(),
+            nn.Dropout(0.1),
+            nn.Linear(256, 128),
+            nn.GELU(),
+            nn.Linear(128, 3),
+        )
+
+    def forward(self, pair: torch.Tensor, seq: torch.Tensor) -> torch.Tensor:
+        """
+        pair: (B, L, L, pair_dim)
+        seq:  (B, L, hidden)
+        Returns: (B, L, 3) mean-centered predicted Cα coordinates
+        """
+        # Symmetric aggregate over both row and column to capture full pair context
+        pair_feat = (pair.mean(dim=2) + pair.mean(dim=1)) / 2.0   # (B, L, pair_dim)
+        feat = torch.cat([pair_feat, seq], dim=-1)                  # (B, L, pair_dim+hidden)
+        coords = self.net(feat)                                      # (B, L, 3)
+        coords = coords - coords.mean(dim=1, keepdim=True)          # center (translation-invariant)
+        return coords
+
+
 class _PairBiasTransformerLayer(nn.Module):
     """Single Evoformer-lite layer: single-sequence track + pair bias + triangle multiplication.
 
@@ -246,7 +285,7 @@ class TransformerDistancePredictor(nn.Module):
     """
     def __init__(self, seq_len, aa_dim=RICH_AA_DIM, hidden=256, pair_dim=64,
                  nhead=4, num_layers=4, n_bins=NUM_BINS + 1, dropout=0.1,
-                 num_recycles=3):
+                 num_recycles=3, coord_head=False):
         super().__init__()
         self.seq_len = seq_len
         self.aa_dim = aa_dim
@@ -298,6 +337,9 @@ class TransformerDistancePredictor(nn.Module):
             nn.Linear(64, 4),
         )
 
+        # Coordinate head (optional): direct 3D Cα coordinate prediction from pair + seq
+        self.coord_head = CoordinateHead(pair_dim, hidden) if coord_head else None
+
     def _rel_pos(self, L, device):
         """Clipped relative-position index matrix, shape (L, L)."""
         idx = torch.arange(L, device=device)
@@ -314,6 +356,32 @@ class TransformerDistancePredictor(nn.Module):
         pair = pair + self.rel_pos_embed(rel_idx).unsqueeze(0)       # broadcast B
         return pair
 
+    def _run_evoformer(self, x, num_recycles=None):
+        """Core Evoformer pass. Returns (logits, ss_logits, plddt_logits, pair, h)."""
+        B, L, _ = x.shape
+        n_rec = num_recycles if num_recycles is not None else self.num_recycles
+
+        # Residue embedding — fixed across recycles
+        h_init = self.residue_proj(x) + self.pos_embed[:L].unsqueeze(0)   # (B, L, hidden)
+
+        # Initial pair representation
+        pair = self._init_pair_repr(h_init, L, x.device)   # (B, L, L, pair_dim)
+
+        for cycle in range(max(n_rec, 1)):
+            h = h_init
+            for layer in self.layers:
+                h, pair = layer(h, pair)
+            if cycle < max(n_rec, 1) - 1:
+                logits_prev = self.distogram_head(pair)
+                logits_prev = (logits_prev + logits_prev.transpose(1, 2)) / 2.0
+                pair = pair + self.recycle_pair_proj(logits_prev.detach())
+
+        logits = self.distogram_head(pair)
+        logits = (logits + logits.transpose(1, 2)) / 2.0
+        ss_logits = self.ss_head(h)
+        plddt_logits = self.plddt_head(h)
+        return logits, ss_logits, plddt_logits, pair, h
+
     def forward_full(self, x, num_recycles=None):
         """Full forward pass with recycling and all auxiliary outputs.
 
@@ -326,33 +394,21 @@ class TransformerDistancePredictor(nn.Module):
             ss_logits:    (B, L, 3)           secondary structure (coil/helix/strand)
             plddt_logits: (B, L, 4)           per-residue pLDDT confidence bins
         """
-        B, L, _ = x.shape
-        n_rec = num_recycles if num_recycles is not None else self.num_recycles
-
-        # Residue embedding — fixed across recycles (single-sequence Evoformer convention)
-        h_init = self.residue_proj(x) + self.pos_embed[:L].unsqueeze(0)   # (B, L, hidden)
-
-        # Initial pair representation
-        pair = self._init_pair_repr(h_init, L, x.device)   # (B, L, L, pair_dim)
-
-        for cycle in range(max(n_rec, 1)):
-            # Reinitialise residue track at each recycle
-            h = h_init
-            for layer in self.layers:
-                h, pair = layer(h, pair)
-
-            if cycle < max(n_rec, 1) - 1:
-                # Recycle: update pair with stop-gradient distogram from this cycle
-                logits_prev = self.distogram_head(pair)
-                logits_prev = (logits_prev + logits_prev.transpose(1, 2)) / 2.0
-                pair = pair + self.recycle_pair_proj(logits_prev.detach())
-
-        # Final outputs from last cycle
-        logits = self.distogram_head(pair)
-        logits = (logits + logits.transpose(1, 2)) / 2.0   # symmetrise  (B, L, L, n_bins)
-        ss_logits = self.ss_head(h)                         # (B, L, 3)
-        plddt_logits = self.plddt_head(h)                   # (B, L, 4)
+        logits, ss_logits, plddt_logits, _, _ = self._run_evoformer(x, num_recycles)
         return logits, ss_logits, plddt_logits
+
+    def forward_with_coords(self, x, num_recycles=None):
+        """Like forward_full, but also returns 3D coordinates from the coordinate head.
+
+        Returns:
+            logits:       (B, L, L, n_bins)
+            ss_logits:    (B, L, 3)
+            plddt_logits: (B, L, 4)
+            coords:       (B, L, 3) mean-centered predicted Cα coordinates, or None
+        """
+        logits, ss_logits, plddt_logits, pair, h = self._run_evoformer(x, num_recycles)
+        coords = self.coord_head(pair, h) if self.coord_head is not None else None
+        return logits, ss_logits, plddt_logits, coords
 
     def forward(self, x, num_recycles=None):
         """Standard forward — returns distogram logits only (backward-compatible)."""

@@ -40,23 +40,31 @@ def main():
 
     print(f'Loading v6 model ({args.model}) ...')
     # Load with aa_dim=368 (ESM_RICH_DIM)
-    raw = __import__('torch').load(args.model, map_location='cpu', weights_only=False)
-    aa_dim = raw.get('aa_dim', ESM_RICH_DIM) if isinstance(raw, dict) else ESM_RICH_DIM
-    model = md.TransformerDistancePredictor(
-        seq_len=CROP_LEN, aa_dim=aa_dim)
+    import torch
+    raw = torch.load(args.model, map_location='cpu', weights_only=False)
     state = raw['state_dict'] if isinstance(raw, dict) else raw
-    model.load_state_dict(state)
+    aa_dim = raw.get('aa_dim', ESM_RICH_DIM) if isinstance(raw, dict) else ESM_RICH_DIM
+    # Auto-detect v8/v9 model: coord_head present → coord_head=True
+    # Also detect seq_len from pos_embed shape in checkpoint
+    is_v8 = any('coord_head' in k for k in state.keys())
+    if 'pos_embed' in state:
+        seq_len = state['pos_embed'].shape[0]
+    else:
+        seq_len = 100 if is_v8 else CROP_LEN
+    model = md.TransformerDistancePredictor(
+        seq_len=seq_len, aa_dim=aa_dim, coord_head=is_v8)
+    model.load_state_dict(state, strict=True)
     model.eval()
     n_params = sum(p.numel() for p in model.parameters())
-    print(f'  {n_params:,} parameters  |  aa_dim={aa_dim}  (ESM-2 + rich encoding)\n')
+    print(f'  {n_params:,} parameters  |  aa_dim={aa_dim}  seq_len={seq_len}  coord_head={is_v8}\n')
 
     results = {}
     for pid, chain in PROTEINS:
         print(f'Evaluating {pid} ...', end=' ', flush=True)
         try:
             path   = utils.fetch_pdb(pid)
-            seq    = utils.pdb_sequence(path, chain=chain, max_residues=CROP_LEN)
-            coords = utils.pdb_ca_coords(path, chain=chain, max_residues=CROP_LEN)
+            seq    = utils.pdb_sequence(path, chain=chain, max_residues=seq_len)
+            coords = utils.pdb_ca_coords(path, chain=chain, max_residues=seq_len)
             N = min(len(seq), len(coords))
             seq_c, crd_c = seq[:N], coords[:N]
 

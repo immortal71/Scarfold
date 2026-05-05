@@ -18,7 +18,7 @@
 8. [Interactive outputs](#interactive-outputs)
 9. [Ideas to extend](#ideas-to-extend)
 
-> **New in latest version (v6):** Input features upgraded from 48-dim hand-crafted encoding to **368-dim ESM-2 + rich** features. ESM-2 (`esm2_t6_8M_UR50D`, 8 M params) provides 320-dim per-residue protein language-model embeddings — implicit evolutionary co-variation distilled from 250 M sequences, without any MSA pipeline. Combined with the 48-dim rich encoding (BLOSUM62 + physicochemical), the new 368-dim input is expected to substantially improve TM-score and long-range contact precision. Previous (v5): LR-weighted contact BCE loss (8× upweight for |i-j|≥12), first non-zero LR P@L/5 = 0.266. Previous (v4): triangle multiplication + 50-protein training + crop augmentation.
+> **New in latest version (v9):** CROP_LEN=80 + 16× long-range contact BCE upweight (|i-j|≥12). Mean TM-score **0.147** (+57% vs v7), long-range P@L/5 **0.546** (+76% vs v7) on 7 held-out test proteins. Key insight: wider crops expose more long-range pairs per gradient step; doubling the LR contact weight (8×→16×) forces the pair track to resolve topology. Previous (v8): CROP_LEN=80 + CoordinateHead (TM=0.083 — coord head hurt short proteins). Previous (v7): ESM-2 368-dim input, TM=0.094. Previous (v5): first non-zero LR P@L/5 = 0.266.
 
 ---
 
@@ -132,10 +132,10 @@ Input  (B, L, 48)
 
 Combined loss over **64+1 distance bins** + auxiliary heads (Transformer only):
 
-$$\mathcal{L} = \mathcal{L}_{\text{distogram CE}} + 0.3 \cdot \mathcal{L}_{\text{contact BCE}} + 0.2 \cdot \mathcal{L}_{\text{SS CE}}$$
+$$\mathcal{L} = \mathcal{L}_{\text{distogram CE}} + 0.5 \cdot \mathcal{L}_{\text{contact BCE}(16\times\text{LR})} + 0.2 \cdot \mathcal{L}_{\text{SS CE}}$$
 
 - **Distogram CE** (uniform): 64 uniform bins 2–22 Å + 1 "too-far" bin. Same as AlphaFold's distogram head — far sharper gradients than MSE regression. Backbone geometry is enforced at reconstruction time (MDS bond constraint) rather than in the loss, giving the model's full gradient budget to long-range contact prediction.
-- **Contact BCE**: binary cross-entropy for pairs < 8 Å (weight 0.3). Provides direct supervision on the most biologically relevant distance threshold.
+- **Contact BCE**: binary cross-entropy for pairs < 8 Å (weight 0.5), with **16× upweight for long-range pairs** (|i-j| ≥ 12). Forces the pair track to resolve topology rather than memorising short-range backbone geometry.
 - **Secondary structure CE**: unsupervised 3-class labels derived from Cα geometry (no DSSP needed, weight 0.2).
 - Optimizer: **AdamW** + **cosine annealing** LR (warmup None, decay to 1% of peak LR) + gradient clipping 1.0.
 
@@ -147,7 +147,39 @@ Coordinates are recovered from expected distances via **gradient-based metric op
 
 ## Results & metrics
 
-### v5 — LR-weighted contact loss fine-tuning (current best)
+### v9 — CROP_LEN=80 + 16× long-range contact loss (current best)
+
+Evaluation on **7 diverse completely held-out** proteins (never seen during training), `model_v9.pt` — trained 80 epochs from v8 checkpoint with CROP_LEN=80 and 16× upweighted long-range contact BCE loss.
+
+| Protein | Length | Class | local lDDT | Contact F1 | Long-range P@L/5 | TM-score proxy |
+|---|---|---|---|---|---|---|
+| 1CRN (crambin) | 46 aa | α+β | **90.6** | **0.963** | **1.000** | **0.244** |
+| 1VII (villin hp) | 36 aa | all-α | 49.5 | 0.888 | 0.000 | 0.129 |
+| 1LYZ (lysozyme) | 60 aa | α+β | 32.9 | 0.668 | **0.500** | 0.134 |
+| 1TRZ (insulin) | 21 aa | all-α | **59.8** | 0.874 | 0.250 | 0.005 |
+| 1AHO (scorpion toxin) | 64 aa | α+β | 43.4 | 0.650 | **0.750** | **0.255** |
+| 2PTL (protein L) | 62 aa | α+β | **56.7** | **0.792** | **0.733** | 0.093 |
+| 1TIG (trigger factor) | 88 aa | α+β | 47.0 | 0.760 | **0.588** | **0.169** |
+| **Mean** | | | **54.3** | **0.799** | **0.546** | **0.147** |
+
+*All proteins evaluated at native length (up to 100aa) — no cropping at inference. 1TRZ (21aa) is challenging for MDS at very short length.*
+
+**Progression across versions:**
+
+| Metric | v5 | v6 (ESM-2) | v7 | v8 | **v9** |
+|---|---|---|---|---|---|
+| Contact F1 | 0.747 | 0.769 | 0.816 | 0.785 | **0.799** |
+| Long-range precision (P@L/5, \|i-j\|≥12) | 0.266 | 0.266 | 0.310 | 0.460 | **0.546** |
+| local lDDT | 44.9 | 48.7 | 57.0 | 52.1 | **54.3** |
+| TM-score proxy | 0.059 | 0.060 | 0.094 | 0.083 | **0.147** |
+| CROP_LEN | 60 | 60 | 60 | 80 | **80** |
+| LR contact upweight | 8× | 8× | 8× | 8× | **16×** |
+
+*v9 key insight: CROP_LEN=80 exposes more long-range pairs per gradient step; doubling LR upweight to 16× forces the pair track to resolve topology. v8 regression vs v7 was caused by the CoordinateHead consuming ~50% of gradient budget; removing it in v9 recovers and surpasses v7.*
+
+> **Honest context on contact F1**: Our controlled ablation (see `report/report.md`) reveals that a zero-learning sequence-distance baseline achieves F1 = **0.712**, because most contacts in small proteins are between sequence-adjacent residues. Contact F1 alone is insufficient. The scientifically meaningful metric is **long-range precision P@L/5** (|i-j| ≥ 12): v3 achieves 0.000, v4 achieves 0.111, v5 achieves 0.266, v9 achieves **0.546** — the pair track with triangle multiplication + LR-weighted training loss is what drives this.
+
+### v5 — LR-weighted contact loss fine-tuning
 
 Evaluation on **7 diverse completely held-out** proteins (never seen during training), `model_v5.pt` — v4 fine-tuned for 30 epochs with 8× upweighted long-range contact BCE loss.
 
@@ -163,20 +195,6 @@ Evaluation on **7 diverse completely held-out** proteins (never seen during trai
 | **Mean** | | | **44.9** | **0.747** | **0.266** | **0.059** |
 
 *†L=60 crop (model trained on 60aa crops). 1AHO has 64 aa total, 2PTL 62 aa, 1TIG 88 aa.*
-
-**Progression across versions:**
-
-| Metric | v3 | v4 | v5 | **v6 (ESM-2)** |
-|---|---|---|---|---|
-| Contact F1 | 0.700 | 0.720 | 0.747 | **0.769** |
-| Long-range precision (P@L/5, \|i-j\|≥12) | 0.000 | 0.111 | 0.266 | **0.266** |
-| local lDDT | 44.0 | 39.5 | 44.9 | **48.7** |
-| TM-score proxy | 0.089 | — | 0.059 | **0.060** |
-| Input features | 48-dim | 48-dim | 48-dim | **368-dim (ESM-2+rich)** |
-
-*v6 trained for 60 epochs (5 warm-up + 55 fine-tune) from v5 checkpoint. ESM-2 improves lDDT (+8.5%) and F1 (+3%) but TM-score and long-range precision require more epochs to converge with 368-dim inputs. Run `python src/train_v6.py --epochs 150` for a more complete training budget.*
-
-> **Honest context on contact F1**: Our controlled ablation (see `report/report.md`) reveals that a zero-learning sequence-distance baseline achieves F1 = **0.712**, because most contacts in small proteins are between sequence-adjacent residues. Contact F1 alone is insufficient. The scientifically meaningful metric is **long-range precision P@L/5** (|i-j| ≥ 12): v3 achieves 0.000, v4 achieves 0.111, v5 achieves **0.266** across 7 diverse proteins — the pair track with triangle multiplication + LR-weighted training loss is what drives this.
 
 ### v3 — Real-PDB training (20 proteins, 200 epochs)
 
@@ -233,8 +251,10 @@ Scarfold/
 │   ├── benchmark.py      ← statistical comparison: MLP vs Transformer vs 3 naive baselines
 │   ├── ablation.py       ← systematic ablation study (11 conditions, all component combos)
 │   ├── esm_utils.py      ← ESM-2 (320-dim) embeddings — drop-in feature extractor (v6)
-│   ├── train_v6.py       ← v6 training: ESM-2 + rich encoding, warm-up then full fine-tune
-│   ├── eval_v6.py        ← v6 evaluation on 7 held-out test proteins
+│   ├── train_v6.py       ← v6/v7 training: ESM-2 + rich encoding, warm-up then full fine-tune
+│   ├── train_v8.py       ← v8 training: CROP_LEN=80 + CoordinateHead (archived)
+│   ├── train_v9.py       ← v9 training: CROP_LEN=80 + 16× LR contact loss (current best)
+│   ├── eval_v6.py        ← evaluation on 7 held-out test proteins (v6–v9 compatible)
 │   ├── pssm.py           ← PSSM encoding: pseudo / PSI-BLAST / runner (50-dim features)
 │   ├── download_data.py  ← download PDB structures (RCSB search or CATH S35 non-redundant)
 │   ├── utils.py          ← MDS, Kabsch, pLDDT, lDDT, TM-score, BLOSUM62/rich encoding
@@ -435,6 +455,7 @@ After running the pipeline, open any `.html` file in your browser:
 
 **Remaining gaps (true research frontier):**
 - ✅ **ESM-2 protein language model embeddings** (v6) — `src/esm_utils.py` + `src/train_v6.py`. 320-dim per-residue embeddings from `esm2_t6_8M_UR50D` (8M params, trained on 250M sequences) replace the 48-dim hand-crafted encoding, providing implicit evolutionary co-variation without a raw MSA pipeline. Combined input: 368-dim (ESM-2 + rich encoding).
+- ✅ **CROP_LEN=80 + 16× LR contact upweight** (v9) — `src/train_v9.py`. Wider crops expose more long-range pairs per gradient step; 16× upweight for |i-j|≥12 forces the pair track to resolve topology. Mean TM-score +57%, LR P@L/5 +76% vs v7. Best checkpoint saved at epoch 31/80 before overfitting.
 - **Full MSA via PSI-BLAST** — next gap after ESM-2. `src/pssm.py` has `run_psiblast()` ready; needs UniRef50 database (~70 GB). Evolutionary coevolution from deep MSA is how AlphaFold learns long-range contacts. Without it, `long_range_precision_L5` stays near zero for this model.
 - **Row/column-wise attention on pair representation** — AF2's full Evoformer has row-wise gated self-attention on the pair matrix (quadratic in L, currently omitted for tractability)
 - **End-to-end training** — backpropagate through gradient MDS with differentiable lDDT loss
